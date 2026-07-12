@@ -11,6 +11,9 @@
 //     choices: [{ id, ... }],               // 응답 버튼 정의
 //     renderStimulus(trial, el, scale, t),  // 자극을 el 에 그린다
 //     renderChoice(choice, btnEl, scale, t),// 버튼을 그린다
+//     isCorrect?(trial, resp): bool,        // 정답 판정(선택). resp={choiceId,timedOut,rt}.
+//                                           // 생략 시 기본: 눌러서 correct 와 일치해야 정답.
+//                                           // Go/No-go 처럼 '안 누름(timedOut)이 정답'인 과제용 훅.
 //     analyze(records, t): { series:[{key,label,value,color}], summary:[{label,value,unit}] },
 //     timing: { fixation:[min,max], isi:[min,max], feedbackMs },
 //     strings: { ko:{...}, en:{...}, zh:{...}, es:{...} },
@@ -496,16 +499,19 @@ export function runTask(config) {
     showPad(false);
     showingStimulus = false; // 응답 후에는 자극 단어를 언어전환 대상에서 제외
 
-    let rt = null, isCorrect = false;
-    if (!resp.timedOut) {
-      rt = resp.t1 - t0; // 페인트 전 반응이면 음수가 될 수 있으나, 분석 단계에서 무효 처리됨
-      isCorrect = resp.choiceId === trial.correct;
-    }
+    let rt = null;
+    if (!resp.timedOut) rt = resp.t1 - t0; // 페인트 전 반응이면 음수가 될 수 있으나, 분석 단계에서 무효 처리됨
+    // 정답 판정은 config 가 재정의할 수 있다(기본 = 눌러서 correct 와 일치).
+    // Go/No-go 처럼 '안 누름(timedOut)이 정답'인 과제는 이 훅으로 표현한다.
+    const decideCorrect = config.isCorrect || ((tr, rp) => !rp.timedOut && rp.choiceId === tr.correct);
+    const isCorrect = decideCorrect(trial, { choiceId: resp.choiceId, timedOut: resp.timedOut, rt });
 
     // 4) 연습에서만 피드백 (규칙 학습용). 본시행은 피드백 없음.
+    // isCorrect 를 timedOut 보다 먼저 본다 → No-go 의 '바르게 참음'(timedOut=정답)도 ✓ 로 표시.
+    // 스트룹 등은 timedOut 이 정답인 경우가 없어 동작이 바뀌지 않는다.
     if (phase === 'practice') {
-      stimulus.className = 'stimulus ' + (resp.timedOut ? 'to' : isCorrect ? 'ok' : 'no');
-      stimulus.textContent = resp.timedOut ? t('timeout') : isCorrect ? '✓' : '✗';
+      stimulus.className = 'stimulus ' + (isCorrect ? 'ok' : resp.timedOut ? 'to' : 'no');
+      stimulus.textContent = isCorrect ? '✓' : resp.timedOut ? t('timeout') : '✗';
       await delay(timing.feedbackMs);
     }
 

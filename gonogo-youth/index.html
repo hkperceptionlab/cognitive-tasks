@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Go/No-go 과제 (청소년)</title>
+  <meta name="theme-color" content="#3949ab" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icons/icon.svg" />
+  <link rel="apple-touch-icon" href="./icons/icon.svg" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <style>
+    /* 응답 버튼이 하나뿐이므로 엔진의 2열 격자를 1열로 덮어써 가운데 넓게 둔다. */
+    .pad { grid-template-columns: 1fr; max-width: 360px; }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <script type="module">
+    import { startGoNogo } from '../gonogo-common/gonogo.js';
+
+    // 청소년: 본시행 60문항(Go 45 / No-go 15), 자극 표시 700ms, 기본 크기
+    startGoNogo({
+      id: 'gonogo-youth',
+      mainCounts: { go: 45, nogo: 15 }, // 60, Go 75% / No-go 25%
+      timeLimitMs: 700,
+      scale: 1,
+    });
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    }
+  </script>
+</body>
+</html>
