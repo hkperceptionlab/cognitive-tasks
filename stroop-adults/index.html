@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>스트룹 과제 (성인)</title>
+  <meta name="theme-color" content="#3949ab" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icons/icon.svg" />
+  <link rel="apple-touch-icon" href="./icons/icon.svg" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+</head>
+<body>
+  <div id="app"></div>
+
+  <script type="module">
+    import { startStroop } from '../stroop-common/stroop.js';
+
+    // 성인: 본시행 32문항(일치 12 / 불일치 20), 시간 제한 없음, 글자·버튼 1.5배
+    // (24문항이면 일치 유효 문항이 5~8개로 흔들려 32로 올림. 시간압박 없어 부담 작음)
+    startStroop({
+      id: 'stroop-adults',
+      mainCounts: { congruent: 12, incongruent: 20 }, // 32
+      timeLimitMs: null,
+      scale: 1.5,
+    });
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    }
+  </script>
+</body>
+</html>

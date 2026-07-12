@@ -1,0 +1,17 @@
+# 배포 링크·자격증명 (실수로 올리지 않도록)
+.vercel/
+.env
+.env.*
+*.pem
+*.key
+
+# 의존성·빌드 산출물 (이 프로젝트엔 없지만 예방)
+node_modules/
+dist/
+build/
+
+# OS·에디터
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

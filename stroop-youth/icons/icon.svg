@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="96" fill="#fafafa"/>
+  <g font-family="system-ui, sans-serif" font-weight="800" font-size="150" text-anchor="middle">
+    <text x="256" y="215" fill="#e53935">파랑</text>
+    <text x="256" y="380" fill="#1e88e5">빨강</text>
+  </g>
+</svg>

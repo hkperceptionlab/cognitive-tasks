@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>스트룹 과제 (청소년)</title>
+  <meta name="theme-color" content="#3949ab" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icons/icon.svg" />
+  <link rel="apple-touch-icon" href="./icons/icon.svg" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+</head>
+<body>
+  <div id="app"></div>
+
+  <script type="module">
+    import { startStroop } from '../stroop-common/stroop.js';
+
+    // 청소년: 본시행 24문항(일치 10 / 불일치 14), 문항당 3초 제한, 기본 크기
+    // (시간압박이 있어 시간초과 시행이 유효 문항에서 더 빠지므로 일치를 10으로 확보)
+    startStroop({
+      id: 'stroop-youth',
+      mainCounts: { congruent: 10, incongruent: 14 }, // 24
+      timeLimitMs: 3000,
+      scale: 1,
+    });
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    }
+  </script>
+</body>
+</html>
