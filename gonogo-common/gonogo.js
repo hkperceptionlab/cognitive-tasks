@@ -114,7 +114,7 @@ const STRINGS = {
     inhibition: 'No-go 억제 성공률',
     goAccuracy: 'Go 정확도',
     shape_go: '원', shape_nogo: '사각형',
-    taskNote: '이 과제는 이미 시작된 반응을 멈추는 능력을 보여줍니다. 스트룹과는 다른 종류의 억제입니다.',
+    taskNote: '이 과제는 하려던 행동을 시작하지 않는 능력을 보여줍니다. 스트룹과는 다른 종류의 억제입니다.',
   },
   en: {
     title: 'Go / No-go Task',
@@ -125,7 +125,7 @@ const STRINGS = {
     inhibition: 'No-go inhibition rate',
     goAccuracy: 'Go accuracy',
     shape_go: 'circle', shape_nogo: 'square',
-    taskNote: 'This task shows your ability to stop a response that has already begun. It is a different kind of inhibition from the Stroop task.',
+    taskNote: 'This task shows your ability to hold back an action before you start it. It is a different kind of inhibition from the Stroop task.',
   },
   zh: {
     title: 'Go / No-go 任务',
@@ -136,7 +136,7 @@ const STRINGS = {
     inhibition: 'No-go 抑制成功率',
     goAccuracy: 'Go 正确率',
     shape_go: '圆形', shape_nogo: '方形',
-    taskNote: '这个任务展示你停止一个已经开始的反应的能力。它与斯特鲁普任务是不同类型的抑制。',
+    taskNote: '这个任务展示你忍住、不做出某个本打算做出的反应的能力。它与斯特鲁普任务是不同类型的抑制。',
   },
   es: {
     title: 'Tarea Go / No-go',
@@ -147,7 +147,7 @@ const STRINGS = {
     inhibition: 'Tasa de inhibición No-go',
     goAccuracy: 'Precisión Go',
     shape_go: 'círculo', shape_nogo: 'cuadrado',
-    taskNote: 'Esta tarea muestra tu capacidad de detener una respuesta que ya ha comenzado. Es un tipo de inhibición distinto al de la tarea de Stroop.',
+    taskNote: 'Esta tarea muestra tu capacidad de no iniciar una acción que ibas a realizar. Es un tipo de inhibición distinto al de la tarea de Stroop.',
   },
 };
 
