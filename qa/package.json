@@ -1,0 +1,13 @@
+{
+  "name": "cognitive-tasks-qa",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "인지과제 회귀 점검 — 헤드리스 Chrome 으로 4개 앱을 자동 플레이해 결과 도달·정답 판정·언어 필터를 확인.",
+  "scripts": {
+    "check": "node check.mjs"
+  },
+  "dependencies": {
+    "puppeteer-core": "^23.11.1"
+  }
+}
