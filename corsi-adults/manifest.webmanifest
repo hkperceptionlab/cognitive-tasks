@@ -1,0 +1,20 @@
+{
+  "name": "코시 블록 (성인)",
+  "short_name": "코시 성인",
+  "description": "블록이 켜진 순서를 기억해 같은 순서로 누르는 시공간 기억 과제. 결과는 기기를 떠나지 않습니다.",
+  "lang": "ko",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fafafa",
+  "theme_color": "#3949ab",
+  "icons": [
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

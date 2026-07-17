@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>코시 블록 (청소년)</title>
+  <meta name="theme-color" content="#3949ab" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icons/icon.svg" />
+  <link rel="apple-touch-icon" href="./icons/icon.svg" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+</head>
+<body>
+  <div id="app"></div>
+
+  <script type="module">
+    import { startCorsi } from '../corsi-common/corsi.js';
+
+    // 청소년: 블록 점등 700ms, 점등 간 간격 400ms, 기본 크기
+    startCorsi({
+      id: 'corsi-youth',
+      scale: 1,
+      flashOn: 700,
+      flashGap: 400,
+    });
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    }
+  </script>
+</body>
+</html>

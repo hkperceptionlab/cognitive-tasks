@@ -34,10 +34,12 @@ const CHROME = [
 if (!CHROME) { console.error('설치된 Chrome 을 찾지 못했습니다.'); process.exit(2); }
 
 const APPS = [
-  { id: 'stroop-youth',  dir: 'stroop-youth'  },
-  { id: 'stroop-adults', dir: 'stroop-adults' },
-  { id: 'gonogo-youth',  dir: 'gonogo-youth'  },
-  { id: 'gonogo-adults', dir: 'gonogo-adults' },
+  { id: 'stroop-youth',  dir: 'stroop-youth',  kind: 'default' },
+  { id: 'stroop-adults', dir: 'stroop-adults', kind: 'default' },
+  { id: 'gonogo-youth',  dir: 'gonogo-youth',  kind: 'default' },
+  { id: 'gonogo-adults', dir: 'gonogo-adults', kind: 'default' },
+  { id: 'corsi-youth',   dir: 'corsi-youth',   kind: 'corsi'   },
+  { id: 'corsi-adults',  dir: 'corsi-adults',  kind: 'corsi'   },
 ];
 
 // ── 정적 서버 (file:// 은 ES module 로딩이 막혀서 필요) ──────────────
@@ -201,6 +203,86 @@ async function checkApp(browser, app) {
   return { id: app.id, checks };
 }
 
+// ── 코시 점검 (적응형·다중자극/응답이라 별도 봇) ──────────────────────
+// 코시는 자극판이 응답 표면이라 응답기가 다르다. 두 방향을 모두 실측한다:
+//   · 정답봇  : 점등 순서를 관찰해 그대로 탭 → 길이 2→…→9 상승, 스팬 9 (정상 진행)
+//   · 오답봇  : 첫 블록을 일부러 틀림 → 즉시 실패, 같은 길이 2연속 실패로 종료, 스팬 0
+// 정답봇만 돌리면 '오답이 안 잡히는' 회귀를, 오답봇만 돌리면 '정상 진행이 깨진' 회귀를 놓친다.
+function installCorsiBot(mistakeFirst) {
+  const st = { seq: [], lastLit: null, wasRecall: false, responded: false };
+  const S = (ms) => new Promise((r) => setTimeout(r, ms));
+  const tap = (idx) => {
+    const el = document.querySelector('.corsi-board .corsi-block[data-idx="' + idx + '"]');
+    if (el) el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' }));
+  };
+  window.__corsiTimer = setInterval(async () => {
+    const board = document.querySelector('.corsi-board');
+    const panel = document.getElementById('cog-panel');
+    if (panel && !panel.hidden && panel.querySelector('.summary')) return;
+    if (!board) return;
+    const recall = board.classList.contains('recall');
+    const lit = board.querySelector('.corsi-block.lit');
+    if (!recall) {
+      if (lit) { const i = Number(lit.dataset.idx); if (st.lastLit !== i) { st.seq.push(i); st.lastLit = i; } }
+      else st.lastLit = null;
+    }
+    if (recall && !st.responded) {
+      st.responded = true;
+      const seq = st.seq.slice();
+      if (mistakeFirst) tap((seq[0] + 1) % 9);              // 첫 탭부터 오답 → 즉시 실패
+      else for (const i of seq) { tap(i); await S(90); }    // 순서대로 정답
+    }
+    if (st.wasRecall && !recall) { st.seq = []; st.lastLit = null; st.responded = false; }
+    st.wasRecall = recall;
+  }, 40);
+}
+
+async function playCorsi(browser, url, id, mistakeFirst) {
+  const page = await browser.newPage();
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+  page.on('console', (m) => { if (m.type() === 'error') errors.push('console.error: ' + m.text()); });
+  await page.goto(url, { waitUntil: 'load' });
+  await page.evaluate((i) => { try { localStorage.removeItem('cog:' + i + ':sessions'); } catch {} }, id);
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('#cog-action', { timeout: 15000 });
+  await page.evaluate(installCorsiBot, mistakeFirst);
+  const t0 = Date.now();
+  let reached = false;
+  while (Date.now() - t0 < RUN_TIMEOUT) {
+    const st = await page.evaluate(() => {
+      const panel = document.getElementById('cog-panel');
+      return { visible: panel && !panel.hidden, hasSummary: !!(panel && panel.querySelector('.summary')),
+        hasAction: !!(panel && panel.querySelector('#cog-action')) };
+    });
+    if (st.visible && st.hasSummary) { reached = true; break; }
+    if (st.visible && st.hasAction && !st.hasSummary) { await page.click('#cog-action').catch(() => {}); await sleep(120); }
+    await sleep(100);
+  }
+  const sess = (await readSessions(page, id)).slice(-1)[0] || null;
+  await page.close();
+  return { errors, reached, span: sess ? sess.values.span : null, trialCount: sess ? sess.trialCount : null };
+}
+
+async function checkCorsi(browser, app) {
+  const checks = [];
+  const add = (name, pass, detail) => checks.push({ name, pass, detail });
+
+  // 정답봇 — 정상 진행(스팬 9까지 상승)
+  const ok = await playCorsi(browser, `http://localhost:${PORT}/${app.dir}/?lang=ko`, app.id, false);
+  add('정답봇 결과 도달', ok.reached, ok.reached ? 'ok' : `${RUN_TIMEOUT}ms 내 요약 없음`);
+  add('정답봇 JS 에러 없음', ok.errors.length === 0, ok.errors.length ? ok.errors.slice(0, 3).join(' / ') : 'none');
+  add('정답봇 적응형 스팬=9(2→…→9)', ok.span === 9 && ok.trialCount === 16, `span=${ok.span}·trials=${ok.trialCount}`);
+
+  // 오답봇 — 첫 블록 오답 → 즉시 실패·행 없음(스팬 0, 2시행)
+  const no = await playCorsi(browser, `http://localhost:${PORT}/${app.dir}/?lang=ko`, app.id, true);
+  add('오답봇 즉시 실패·행 없음', no.reached && no.errors.length === 0 && no.span === 0 && no.trialCount === 2,
+    `도달=${no.reached}·에러${no.errors.length}·span=${no.span}·trials=${no.trialCount}`);
+
+  return { id: app.id, checks };
+}
+
 // ── 실행 ─────────────────────────────────────────────────────────────
 const server = await startServer();
 const browser = await puppeteer.launch({
@@ -210,8 +292,8 @@ const browser = await puppeteer.launch({
 let allPass = true;
 try {
   for (const app of APPS) {
-    console.log(`\n▶ ${app.id} — 두 회차 자동 플레이 중… (수십 초 소요)`);
-    const r = await checkApp(browser, app);
+    console.log(`\n▶ ${app.id} — 자동 플레이 중… (수십 초 소요)`);
+    const r = app.kind === 'corsi' ? await checkCorsi(browser, app) : await checkApp(browser, app);
     for (const c of r.checks) {
       if (!c.pass) allPass = false;
       console.log(`   ${c.pass ? '✅ PASS' : '❌ FAIL'}  ${c.name} — ${c.detail}`);
