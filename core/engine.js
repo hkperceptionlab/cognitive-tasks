@@ -8,7 +8,7 @@
 //     scale,                                // 글자·버튼 배율 (1 = 기본)
 //     buildPracticePool(): trial[]          // 연습용 (기록 안 함)
 //     buildMainPool(): trial[]              // 각 trial 은 .condition, .correct 를 가진다
-//     choices: [{ id, ... }],               // 응답 버튼 정의
+//     choices: [{ id, ... }],               // 응답 버튼 정의(없으면 pad 안 씀 — 코시처럼 자극판이 응답면)
 //     renderStimulus(trial, el, scale, t),  // 자극을 el 에 그린다
 //     renderChoice(choice, btnEl, scale, t),// 버튼을 그린다
 //     isCorrect?(trial, resp): bool,        // 정답 판정(선택). resp={choiceId,timedOut,rt}.
@@ -17,10 +17,21 @@
 //     analyze(records, t): { series:[{key,label,value,color}], summary:[{label,value,unit}] },
 //     timing: { fixation:[min,max], isi:[min,max], feedbackMs },
 //     strings: { ko:{...}, en:{...}, zh:{...}, es:{...} },
+//
+//     ── 적응형·다중자극/응답 과제용 확장 훅(선택; 없으면 위 기본 경로와 100% 동일) ──
+//     mainTrials(): async generator                 // 정적 buildMainPool 대신. 시행을 yield 하고
+//                                                   // 엔진이 그 결과 outcome 을 .next(outcome) 로 되돌린다
+//                                                   // (성공 여부로 다음 시행을 정하는 계단식 등). 코시·숫자거꾸로.
+//     practiceTrials(): async generator             // 연습용 적응형 소스(선택)
+//     playTrial(trial, ctx, phase): {record,outcome}// 한 시행 내부를 과제가 소유(순차 다중 자극·순서 다중 응답).
+//                                                   // ctx={host,scale,timing,timeLimitMs,t,delay,pickMs,
+//                                                   //      stampAfterPaint,setProgress(fn)}. 생략 시 기본 구동기.
+//     sessionAcc(records): number|null              // 세션 정확도 재정의(선택). 스팬형은 null 로 저정확도 경고 끔.
 //   }
 //
 // trial  = { condition, correct, ...taskData }
-// record = { condition, correct, choiceId, rt, timedOut, isCorrect, rtValid }
+// record = { condition, correct, choiceId, rt, timedOut, isCorrect, rtValid }  (커스텀 구동기는 자유 형식)
+// outcome= { success, ... }  // 적응형 소스(mainTrials)의 yield 로 되돌아가는 시행 결과
 
 import { ENGINE_STRINGS, LANG_NAMES, detectLang, LANG_STORAGE_KEY } from './i18n.js';
 
@@ -168,6 +179,8 @@ html,body{margin:0}
 .stimulus.fixation{color:var(--muted);font-weight:600}
 .stimulus.ok{color:#2e7d32}.stimulus.no{color:#c62828}
 .stimulus.to{color:var(--muted);font-size:2rem;font-weight:600}
+.host{width:100%;max-width:520px;display:flex;align-items:center;justify-content:center}
+.host[hidden]{display:none}
 .panel{width:100%;max-width:520px}
 .panel-card{background:var(--card);border-radius:16px;padding:1.4rem;
   box-shadow:0 1px 3px rgba(0,0,0,.08);text-align:center}
@@ -353,6 +366,7 @@ export function runTask(config) {
     </header>
     <main class="stage">
       <div id="cog-stimulus" class="stimulus" hidden></div>
+      <div id="cog-host" class="host" hidden></div>
       <section id="cog-panel" class="panel"></section>
     </main>
     <div id="cog-pad" class="pad" hidden></div>
@@ -361,10 +375,14 @@ export function runTask(config) {
 
   const progress = root.querySelector('#cog-progress');
   const stimulus = root.querySelector('#cog-stimulus');
+  const host = root.querySelector('#cog-host');       // 커스텀 시행 구동기(예: 코시 블록판)가 소유
   const panel = root.querySelector('#cog-panel');
   const pad = root.querySelector('#cog-pad');
   const langbar = root.querySelector('#cog-langbar');
   const footer = root.querySelector('.disclaimer');
+
+  // 응답 버튼이 없는 과제(코시처럼 자극판 자체가 응답 표면)도 있으므로 choices 는 선택.
+  const choices = config.choices || [];
 
   // 이 과제가 실제로 번역을 제공하는 언어만 노출 (엔진 문자열 ∩ 과제 문자열)
   const langs = Object.keys(LANG_NAMES).filter(
@@ -375,6 +393,9 @@ export function runTask(config) {
   let rerender = null;
   // 시행 진행 상태(언어 전환 시 진행표시·자극을 새 언어로 갱신하기 위함)
   let activePhase = null, activeN = 0, activeTotal = 0, activeTrial = null, showingStimulus = false;
+  // 적응형 과제는 총 문항 수가 없어 진행표시를 과제가 정한다(예: "길이 3"). 언어 전환에도
+  // 살아남도록 결과 문자열이 아니라 t 를 다시 읽는 함수를 저장한다. 정적 과제는 null.
+  let activeTextFn = null;
 
   function buildLangBar() {
     langbar.innerHTML = langs
@@ -396,9 +417,10 @@ export function runTask(config) {
     footer.textContent = t('disclaimer');
     buildLangBar();
     // 응답 버튼 라벨 갱신
-    config.choices.forEach((ch, i) => config.renderChoice(ch, padButtons[i], scale, t));
-    // 시행 중이면 진행표시·자극도 새 언어로
-    if (activePhase) progress.textContent = `${activePhase === 'practice' ? t('practiceLabel') : t('mainLabel')} ${activeN}/${activeTotal}`;
+    choices.forEach((ch, i) => config.renderChoice(ch, padButtons[i], scale, t));
+    // 시행 중이면 진행표시도 새 언어로. 적응형(activeTextFn)은 그 함수를, 정적은 n/total 을.
+    if (activeTextFn) progress.textContent = activeTextFn();
+    else if (activePhase) progress.textContent = `${activePhase === 'practice' ? t('practiceLabel') : t('mainLabel')} ${activeN}/${activeTotal}`;
     if (showingStimulus && activeTrial) config.renderStimulus(activeTrial, stimulus, scale, t);
     // 패널 화면(인트로/결과 등) 다시 그리기
     if (rerender) rerender();
@@ -406,7 +428,7 @@ export function runTask(config) {
 
   // 응답 버튼은 한 번만 만든다 (위치 학습이 시행 내내 일정하도록).
   const padButtons = [];
-  config.choices.forEach((ch) => {
+  choices.forEach((ch) => {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'choice';
@@ -423,16 +445,20 @@ export function runTask(config) {
     panel.innerHTML = html;
     panel.hidden = false;
     stimulus.hidden = true;
+    host.hidden = true;
     pad.hidden = true;
     progress.hidden = true;
     activePhase = null;
     activeTrial = null;
+    activeTextFn = null;
     showingStimulus = false;
   }
-  function setTrialView() {
+  // custom=true 면 기본 자극·응답패드 대신 host(과제가 소유)를 보여준다.
+  function setTrialView(custom) {
     panel.hidden = true;
-    stimulus.hidden = false;
-    pad.hidden = false;
+    stimulus.hidden = !!custom;
+    pad.hidden = !!custom;
+    host.hidden = !custom;
     progress.hidden = false;
     rerender = null; // 시행 중에는 패널 재렌더 없음
   }
@@ -441,8 +467,16 @@ export function runTask(config) {
     activePhase = phase;
     activeN = n;
     activeTotal = total;
+    activeTextFn = null;
     const label = phase === 'practice' ? t('practiceLabel') : t('mainLabel');
     progress.textContent = `${label} ${n}/${total}`;
+  }
+  // 적응형 과제용: 총 문항 수가 없을 때 과제가 진행표시를 직접 정한다.
+  // fn 은 t 를 다시 읽으므로 언어 전환에도 올바르게 갱신된다.
+  function setProgressText(phase, fn) {
+    activePhase = phase;
+    activeTextFn = fn;
+    progress.textContent = fn();
   }
 
   // ── 응답 대기: pointerdown / 숫자키. limitMs 초과 시 timeout. ──
@@ -476,8 +510,9 @@ export function runTask(config) {
     });
   }
 
-  // ── 한 시행 실행 ──
-  async function runTrial(trial, phase) {
+  // ── 기본 시행 구동기: 자극 1개 → 응답 1개 (스트룹·Go/No-go 등 기존 과제) ──
+  // 반환 { record, outcome }: record 는 본시행에서만(연습=null), outcome 은 적응형 소스로 되돌아간다.
+  async function defaultPlayTrial(trial, phase) {
     activeTrial = trial;
     // 1) 응시점 (매 시행 무작위 길이)
     showingStimulus = false;
@@ -515,34 +550,65 @@ export function runTask(config) {
       await delay(timing.feedbackMs);
     }
 
-    if (phase === 'main') {
-      records.push({
-        condition: trial.condition,
-        correct: trial.correct,
-        choiceId: resp.choiceId,
-        rt,
-        timedOut: resp.timedOut,
-        isCorrect,
-        inputType: resp.inputType || null, // 이 응답에 쓰인 입력 방식
-      });
-    }
+    const record = phase === 'main' ? {
+      condition: trial.condition,
+      correct: trial.correct,
+      choiceId: resp.choiceId,
+      rt,
+      timedOut: resp.timedOut,
+      isCorrect,
+      inputType: resp.inputType || null, // 이 응답에 쓰인 입력 방식
+    } : null;
 
     // 5) 시행 간 공백 (매 시행 무작위 길이)
     stimulus.textContent = '';
     stimulus.className = 'stimulus';
     await delay(pickMs(timing.isi));
+    return { record, outcome: { success: isCorrect } };
   }
 
+  // 커스텀 구동기(config.playTrial)에 넘기는 원시 도구 모음. 엔진은 앱 껍데기·언어·저장·결과를
+  // 계속 소유하고, 과제는 한 시행 내부(순차 다중 자극 제시·순서 다중 응답 등)만 host 안에서 그린다.
+  //   config.playTrial(trial, ctx, phase) → { record, outcome }
+  const trialCtx = {
+    host, scale, timing, timeLimitMs, t,
+    delay, pickMs, stampAfterPaint,
+    setProgress: (fn) => setProgressText(activePhase || 'main', fn),
+  };
+
+  // 시행 소스 통일: 정적 배열(buildPool)이든 적응형 제너레이터(mainTrials/practiceTrials)든
+  // 하나의 async 이터레이터로 다룬다. total=null 이면 적응형(총 문항 수 미정).
+  function makeSource(phase) {
+    const poolGen = (pool) => (async function* () { for (const tr of pool) yield tr; })();
+    if (phase === 'practice') {
+      if (config.practiceTrials) return { gen: config.practiceTrials(), total: null };
+      const pool = shuffle(config.buildPracticePool()).slice(0, config.practiceCount || 5);
+      return { gen: poolGen(pool), total: pool.length };
+    }
+    if (config.mainTrials) return { gen: config.mainTrials(), total: null };
+    const pool = orderByConstraint(config.buildMainPool());
+    return { gen: poolGen(pool), total: pool.length };
+  }
+
+  // 한 페이즈: 소스에서 시행을 하나씩 받아 구동기로 실행하고, 결과를 소스로 되돌린다(적응형).
+  // 정적 과제는 기존과 동일하게 "본시행 n/total" 진행표시로 순회한다.
   async function runPhase(phase) {
-    const pool =
-      phase === 'practice'
-        ? shuffle(config.buildPracticePool()).slice(0, config.practiceCount || 5)
-        : orderByConstraint(config.buildMainPool());
     if (phase === 'main') records = [];
-    setTrialView();
-    for (let i = 0; i < pool.length; i++) {
-      setProgress(phase, i + 1, pool.length);
-      await runTrial(pool[i], phase);
+    const custom = !!config.playTrial;
+    setTrialView(custom);
+    activePhase = phase;
+    const play = config.playTrial
+      ? (tr) => config.playTrial(tr, trialCtx, phase)
+      : (tr) => defaultPlayTrial(tr, phase);
+    const { gen, total } = makeSource(phase);
+    let i = 0;
+    let step = await gen.next();
+    while (!step.done) {
+      i++;
+      if (total != null) setProgress(phase, i, total); // 정적: 기존과 동일
+      const { record, outcome } = await play(step.value);
+      if (phase === 'main' && record) records.push(record);
+      step = await gen.next(outcome);
     }
   }
 
@@ -585,13 +651,18 @@ export function runTask(config) {
     const res = config.analyze(finished, t);
     const values = {};
     (res.series || []).forEach((s) => { values[s.key] = s.value; });
+    // 정확도(그래프 저정확도 표시용). 기본 = 정답 시행 비율. 스팬형(코시 등)처럼 정확도 개념이
+    // 없는 과제는 config.sessionAcc 로 null 을 반환해 저정확도 경고/속빈점이 오발동하지 않게 한다.
+    const acc = config.sessionAcc
+      ? config.sessionAcc(finished)
+      : (finished.length ? finished.filter((r) => r.isCorrect).length / finished.length : null);
     const sess = {
       date: new Date().toISOString(),
       values,
       lang,                              // 어떤 언어로 했는지
       input: dominantInput(finished),    // 대표 입력 방식(마우스/터치/펜/키보드)
       trialCount: finished.length,       // 이 세션의 본시행 문항 수
-      acc: finished.length ? finished.filter((r) => r.isCorrect).length / finished.length : null, // 정확도(그래프 표시용)
+      acc,
     };
     let sessions = loadSessions(config.id);
     sessions.push(sess);
@@ -625,9 +696,14 @@ export function runTask(config) {
     const habitNote = mine.length >= 2 ? `<p class="graph-note">${t('graphNote')}</p>` : '';
     let hiddenNote = '';
     if (hidden.length > 0) {
+      // 차원별 사유 문구는 과제가 config.strings 로 재정의할 수 있다(엔진이 하드코딩하지 않음).
+      // 예: 코시는 언어가 결과에 영향이 거의 없어 diffLangReason 을 자기 문구로 바꾼다.
+      // 빈 문자열('')로 두면 그 차원의 사유는 아예 표시하지 않는다.
       let reasons = '';
-      if (diffDims.has('lang')) reasons += `<br>${t('diffLangReason')}`;
-      if (diffDims.has('input')) reasons += `<br>${t('diffInputReason')}`;
+      diffDims.forEach((d) => {
+        const r = t('diff' + d[0].toUpperCase() + d.slice(1) + 'Reason'); // diffLangReason / diffInputReason
+        if (r) reasons += `<br>${r}`;
+      });
       hiddenNote = `<p class="graph-note">${t('otherCondBase', { n: hidden.length })}${reasons}</p>`;
     }
 
