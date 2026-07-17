@@ -50,6 +50,7 @@ const MAX_STORED = 60;
 const FAMILY_COLORS = {
   inhibition: '#3949ab', // 스트룹, Go/No-go (파랑, 기본값)
   memory: '#1D6F4F',     // 코시, 숫자 거꾸로 (진한 초록)
+  speed: '#6B2D5C',      // 단순 반응속도 (진한 자주)
 };
 const DEFAULT_ACCENT = FAMILY_COLORS.inhibition;
 
@@ -145,8 +146,8 @@ function markRtValidity(records) {
 }
 
 // ── 조건(비교 가능성) 판단 — 모든 차원을 한 곳에서 ──────────
-// 세션 비교 기준이 되는 조건 차원. 새 차원(예: 기기 종류)이 생기면
-// 여기 배열에만 추가하면 필터·안내가 함께 따라간다. 차원별 필터를 따로 만들지 말 것.
+// 세션 비교 기준이 되는 조건 차원(기본). 과제가 config.conditionKeys 로 줄일 수 있다
+// (예: 단순 반응속도는 언어 무관 → ['input'] 만). 차원별 필터를 따로 만들지 말 것.
 const CONDITION_KEYS = ['lang', 'input'];
 const FEW_TRIALS = 8; // 유효 문항이 이보다 적으면 '값이 흔들린다' 경고
 const LOW_ACC = 0.9;  // 정답률이 이보다 낮은 회차는 그래프에서 속 빈 점 + 선 미연결 (상단 경고와 같은 기준)
@@ -156,9 +157,9 @@ function conditionOf(session, curLang) {
   return { lang: session.lang || curLang, input: session.input || null };
 }
 // 두 조건이 '어느 차원에서' 다른지 반환(빈 배열이면 완전히 같아 비교 가능).
-// 비교 가능 여부와 그 이유(어떤 차원이 다른지)를 이 함수 하나로 판단한다.
-function conditionDiffs(a, b) {
-  return CONDITION_KEYS.filter((k) => a[k] !== b[k]);
+// keys 로 비교할 차원을 제한할 수 있다(과제가 언어 등을 조건에서 뺄 때).
+function conditionDiffs(a, b, keys = CONDITION_KEYS) {
+  return keys.filter((k) => a[k] !== b[k]);
 }
 // 이번 세션의 대표 입력 방식: 응답들 중 가장 많이 쓰인 것(시간초과 응답은 입력 없음).
 function dominantInput(records) {
@@ -706,13 +707,14 @@ export function runTask(config) {
       })
       .join('');
 
-    // 그래프는 '현재 조건과 같은' 세션만. 비교 가능 여부는 conditionDiffs 하나로 판단.
-    const isMine = (s) => conditionDiffs(conditionOf(s, current.lang), current).length === 0;
+    // 그래프는 '현재 조건과 같은' 세션만. 비교 차원은 과제가 줄일 수 있다(예: SRT는 언어 제외).
+    const condKeys = config.conditionKeys || CONDITION_KEYS;
+    const isMine = (s) => conditionDiffs(conditionOf(s, current.lang), current, condKeys).length === 0;
     const mine = sessions.filter(isMine);
     const hidden = sessions.filter((s) => !isMine(s));
     // 숨긴 세션들이 '어느 차원에서' 다른지 모아 이유를 해당하는 것만 보여준다.
     const diffDims = new Set();
-    hidden.forEach((s) => conditionDiffs(conditionOf(s, current.lang), current).forEach((d) => diffDims.add(d)));
+    hidden.forEach((s) => conditionDiffs(conditionOf(s, current.lang), current, condKeys).forEach((d) => diffDims.add(d)));
 
     const habitNote = mine.length >= 2 ? `<p class="graph-note">${t('graphNote')}</p>` : '';
     let hiddenNote = '';
@@ -728,10 +730,11 @@ export function runTask(config) {
       hiddenNote = `<p class="graph-note">${t('otherCondBase', { n: hidden.length })}${reasons}</p>`;
     }
 
-    // 하단 현재 조건: 언어 · 입력 방식
-    const condParts = [LANG_NAMES[current.lang] || current.lang];
-    if (current.input) condParts.push(t('input_' + current.input));
-    const condLine = `<p class="condition-line">${condParts.join(' · ')}</p>`;
+    // 하단 현재 조건: 비교 차원(condKeys)만 표시. SRT 처럼 언어가 조건이 아니면 언어를 안 적는다.
+    const condParts = [];
+    if (condKeys.includes('lang')) condParts.push(LANG_NAMES[current.lang] || current.lang);
+    if (condKeys.includes('input') && current.input) condParts.push(t('input_' + current.input));
+    const condLine = condParts.length ? `<p class="condition-line">${condParts.join(' · ')}</p>` : '';
 
     // 그래프를 series 의 group 별로 나눠 그린다(위: 일치·불일치 RT / 아래: 스트룹 효과).
     // 값 크기가 크게 다른 시리즈를 한 축에 두면 작은 쪽이 안 보이므로 축을 분리한다.
