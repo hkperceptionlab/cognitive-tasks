@@ -14,7 +14,10 @@
 //     isCorrect?(trial, resp): bool,        // 정답 판정(선택). resp={choiceId,timedOut,rt}.
 //                                           // 생략 시 기본: 눌러서 correct 와 일치해야 정답.
 //                                           // Go/No-go 처럼 '안 누름(timedOut)이 정답'인 과제용 훅.
-//     analyze(records, t): { series:[{key,label,value,color}], summary:[{label,value,unit}] },
+//     analyze(records, t): { series:[{key,label,value,color}], summary:[{label,value,unit}],
+//                            extraHtml? }  // extraHtml(선택): 요약 아래 삽입할 HTML(예: 이번 회차
+//                            // 궤적 스파크라인). 없으면 결과 화면은 기존과 바이트 단위로 동일.
+//                            // 규칙: 색은 var(--accent) 등 CSS 변수, 텍스트는 t()(4언어), 판정 문구 금지.
 //     timing: { fixation:[min,max], isi:[min,max], feedbackMs },
 //     strings: { ko:{...}, en:{...}, zh:{...}, es:{...} },
 //
@@ -754,7 +757,7 @@ export function runTask(config) {
     setPanel(`<div class="panel-card">
       <h2>${t('finished')}</h2>
       ${topNotes}
-      <div class="summary">${rows}</div>
+      <div class="summary">${rows}</div>${res.extraHtml || ''}
       <h3 class="graph-title">${t('lastSessions')}</h3>
       ${graphDivs}
       ${habitNote}
