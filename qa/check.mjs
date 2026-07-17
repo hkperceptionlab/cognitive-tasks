@@ -44,15 +44,17 @@ const APPS = [
   { id: 'digitspan-adults', dir: 'digitspan-adults', kind: 'digitspan' },
   { id: 'srt-youth',  dir: 'srt-youth',  kind: 'srt' },
   { id: 'srt-adults', dir: 'srt-adults', kind: 'srt' },
+  { id: 'simon-youth',  dir: 'simon-youth',  kind: 'simon' },
+  { id: 'simon-adults', dir: 'simon-adults', kind: 'simon' },
 ];
 
 // 범위 지정: `node check.mjs`(전체) / `node check.mjs digitspan`(접두사 일치) / `node check.mjs stroop gonogo`.
 const ARGS = process.argv.slice(2);
 const SELECTED = APPS.filter((a) => ARGS.length === 0 || ARGS.some((x) => a.id.startsWith(x)));
 
-// 동시에 검사할 앱(=브라우저 인스턴스) 수. 8코어 머신에서 시행의 대부분은 점등·응시 '대기'라
-// CPU가 놀아, 선택 앱을 모두 동시에 돌리면 그 대기들이 겹쳐 전체가 3분 이내로 끝난다.
-// 범위 지정 시엔 min(PARALLEL, 선택 앱 수)만 뜬다.
+// 동시에 검사할 앱(=브라우저 인스턴스) 수. 시행의 대부분은 점등·응시·대기 '설정시간'이라
+// CPU가 놀아 병렬로 겹치면 크게 빨라지지만, 코어 수를 넘기면(예: 8코어에 12개) 정적서버·자원이
+// 초과돼 navigation 이 abort 된다. 그래서 코어 수(8)에 맞춘다. 범위 지정 시엔 min(PARALLEL, 선택 수).
 const PARALLEL = 8;
 const QA_SPAN = 3;    // QA 축약 모드에서 적응형 최대 길이(=성공 시 스팬)
 const QA_TRIALS = 4;  // 그때 본시행 수: 길이 2·3 각 2회 = 4
@@ -476,6 +478,100 @@ async function checkSRT(browser, app) {
   return { id: app.id, checks };
 }
 
+// ── 사이먼 점검 (스트룹과 같은 기본 경로 — 색 버튼 2개, 좌우 자극) ──────────
+// color   : 도형 색과 같은 버튼(정답봇) → 정확도 100%, 사이먼 효과 ~0(봇은 위치에 안 끌림)
+// position: 도형이 있는 쪽 버튼(색 무시) → 일치 정답·불일치 오답 = 정확도 정확히 50%,
+//           불일치 유효RT 없음('—'), 저정확도 경고 뜸
+// fixed   : 항상 한 버튼(파랑) → 색이 반반이라 정확도 50%, 저정확도 경고 뜸(무작위/부주의 대역)
+function installSimonBot(strategy) {
+  window.__seen = new Set();
+  window.__simonTimer = setInterval(() => {
+    const pad = document.getElementById('cog-pad');
+    const stim = document.getElementById('cog-stimulus');
+    const prog = document.getElementById('cog-progress');
+    if (!pad || !stim || pad.hidden || !pad.classList.contains('live')) return;
+    if (!stim.querySelector('.simon-dot')) return;
+    const key = prog ? prog.textContent : String(Date.now());
+    if (window.__seen.has(key)) return;
+    window.__seen.add(key);
+    setTimeout(() => {
+      const p = document.getElementById('cog-pad');
+      if (!p || !p.classList.contains('live')) return;
+      const dot = document.getElementById('cog-stimulus').querySelector('.simon-dot');
+      if (!dot) return;
+      const buttons = [...p.querySelectorAll('.choice')]; // [0]=왼쪽(파랑), [1]=오른쪽(노랑)
+      let target;
+      if (strategy === 'color') target = buttons.find((b) => b.dataset.choice === dot.dataset.color);
+      else if (strategy === 'fixed') target = buttons[0];
+      else { // position: 도형이 화면 중앙보다 왼쪽이면 왼쪽 버튼
+        const r = dot.getBoundingClientRect();
+        target = (r.left + r.width / 2) < window.innerWidth / 2 ? buttons[0] : buttons[1];
+      }
+      if (target) target.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' }));
+    }, 350);
+  }, 20);
+}
+
+async function playSimon(browser, url, id, strategy) {
+  const page = await browser.newPage();
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+  page.on('console', (m) => { if (m.type() === 'error') errors.push('console.error: ' + m.text()); });
+  await page.goto(url, { waitUntil: 'load' });
+  await page.evaluate((i) => { try { localStorage.removeItem('cog:' + i + ':sessions'); } catch {} }, id);
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('#cog-action', { timeout: 15000 });
+  await page.evaluate(installSimonBot, strategy);
+  const t0 = Date.now();
+  let reached = false;
+  while (Date.now() - t0 < RUN_TIMEOUT) {
+    const st = await page.evaluate(() => {
+      const panel = document.getElementById('cog-panel');
+      return { visible: panel && !panel.hidden, hasSummary: !!(panel && panel.querySelector('.summary')),
+        hasAction: !!(panel && panel.querySelector('#cog-action')) };
+    });
+    if (st.visible && st.hasSummary) { reached = true; break; }
+    if (st.visible && st.hasAction && !st.hasSummary) { await page.click('#cog-action').catch(() => {}); await sleep(120); }
+    await sleep(100);
+  }
+  const acc = reached ? ((await readSessions(page, id)).slice(-1)[0] || {}).acc : null;
+  const info = reached ? await page.evaluate(() => {
+    const panel = document.getElementById('cog-panel');
+    const rowVal = (i) => { const b = panel.querySelectorAll('.summary .row b')[i];
+      const txt = b && b.firstChild ? b.firstChild.textContent : (b ? b.textContent : '');
+      const m = txt.match(/-?\d+/); return m ? parseInt(m[0], 10) : null; };
+    return { topNotes: panel.querySelectorAll('.top-note').length, incong: rowVal(2) }; // 요약 3행째=불일치 RT
+  }) : { topNotes: 0, incong: null };
+  await page.close();
+  return { errors, reached, acc, topNotes: info.topNotes, incong: info.incong };
+}
+
+async function checkSimon(browser, app) {
+  const checks = [];
+  const add = (name, pass, detail) => checks.push({ name, pass, detail });
+
+  // 색봇(정답) — 색으로 정확히 답함
+  const c = await playSimon(browser, urlFor(app.dir, 'ko'), app.id, 'color');
+  add('색봇 결과 도달', c.reached, c.reached ? 'ok' : `${RUN_TIMEOUT}ms 내 요약 없음`);
+  add('색봇 JS 에러 없음', c.errors.length === 0, c.errors.length ? c.errors.slice(0, 3).join(' / ') : 'none');
+  add('색봇 정확도 100%(위치에 안 끌림)', c.reached && c.acc === 1, `acc=${Math.round((c.acc ?? 0) * 100)}%·경고배너=${c.topNotes}`);
+
+  // 위치봇 — 위치대로 누름(색 무시): 일치 정답·불일치 오답 → 정확도 정확히 50%·불일치RT 없음·경고
+  const p = await playSimon(browser, urlFor(app.dir, 'ko'), app.id, 'position');
+  add('위치봇: 정확도 50%·불일치 RT 없음·저정확도 경고',
+    p.reached && p.errors.length === 0 && p.acc === 0.5 && p.incong === null && p.topNotes >= 3,
+    `acc=${Math.round((p.acc ?? 0) * 100)}%·불일치RT=${p.incong}·경고배너=${p.topNotes}`);
+
+  // 저정확도봇(한 버튼 고정) — 색 반반이라 50% → 저정확도 경고 뜨는가
+  const f = await playSimon(browser, urlFor(app.dir, 'ko'), app.id, 'fixed');
+  add('저정확도 경고 뜸(정확도<90%)',
+    f.reached && f.errors.length === 0 && f.acc < 0.9 && f.topNotes >= 3,
+    `acc=${Math.round((f.acc ?? 0) * 100)}%·경고배너=${f.topNotes}`);
+
+  return { id: app.id, checks };
+}
+
 // ── 실행 ─────────────────────────────────────────────────────────────
 if (SELECTED.length === 0) {
   console.error(`일치하는 앱이 없습니다: "${ARGS.join(' ')}". 예: digitspan / stroop gonogo / corsi-youth`);
@@ -486,7 +582,8 @@ const checkOne = (browser, app) =>
   app.kind === 'corsi' ? checkCorsi(browser, app)
     : app.kind === 'digitspan' ? checkDigitSpan(browser, app)
       : app.kind === 'srt' ? checkSRT(browser, app)
-        : checkApp(browser, app);
+        : app.kind === 'simon' ? checkSimon(browser, app)
+          : checkApp(browser, app);
 
 const server = await startServer();
 // 진짜 병렬을 위해 브라우저 '인스턴스'를 여러 개 띄운다. 한 브라우저의 여러 페이지는 CDP 명령이
@@ -503,7 +600,12 @@ try {
   const worker = async (browser) => {
     while (next < SELECTED.length) {
       const idx = next++;
-      results[idx] = await checkOne(browser, SELECTED[idx]);
+      // 한 앱이 깨져도(예: navigation abort) 전체 실행을 죽이지 않고 그 앱만 FAIL 로 보고.
+      try {
+        results[idx] = await checkOne(browser, SELECTED[idx]);
+      } catch (e) {
+        results[idx] = { id: SELECTED[idx].id, checks: [{ name: '검사 실행', pass: false, detail: 'ERROR: ' + (e && e.message ? e.message : e) }] };
+      }
     }
   };
   await Promise.all(browsers.map((b) => worker(b)));

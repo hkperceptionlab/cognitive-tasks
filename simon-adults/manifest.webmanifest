@@ -1,0 +1,20 @@
+{
+  "name": "사이먼 과제 (성인)",
+  "short_name": "사이먼 성인",
+  "description": "색으로 답하고 위치는 무시하는 사이먼 효과 과제. 결과는 기기를 떠나지 않습니다.",
+  "lang": "ko",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fafafa",
+  "theme_color": "#3949ab",
+  "icons": [
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
