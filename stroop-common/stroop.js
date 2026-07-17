@@ -1,7 +1,7 @@
 // stroop-common/stroop.js — 스트룹 과제 정의(청소년·성인 앱이 공유).
 // 색 이름·자극 생성·결과 계산·문자열이 두 앱에서 동일하다.
 
-import { runTask } from '../core/engine.js';
+import { runTask, QA } from '../core/engine.js';
 
 // 색 4개: 빨강 파랑 노랑 검정 (on: 버튼 위 글자 대비색)
 export const COLORS = [
@@ -129,6 +129,8 @@ const STRINGS = {
 
 // 앱마다 다른 것: id, 문항 수, 제한시간, 배율
 export function startStroop({ id, mainCounts, timeLimitMs, scale }) {
+  // QA 축약: 문항 수만 최소로(일치 2·불일치 2 = 4). 판정·자극·UI 는 그대로.
+  const counts = QA ? { congruent: 2, incongruent: 2 } : mainCounts;
   runTask({
     id,
     mount: 'app',
@@ -137,7 +139,7 @@ export function startStroop({ id, mainCounts, timeLimitMs, scale }) {
     scale,
     choices: COLORS,
     buildPracticePool,
-    buildMainPool: () => buildMainPool(mainCounts),
+    buildMainPool: () => buildMainPool(counts),
     renderStimulus,
     renderChoice,
     analyze,

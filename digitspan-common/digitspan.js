@@ -8,9 +8,9 @@
 // 앱마다 다른 것: id, scale, showOn(숫자 표시 시간), gap(숫자 간 간격).
 //   startDigitSpan({ id, scale, showOn, gap, accent })
 
-import { runTask } from '../core/engine.js';
+import { runTask, QA } from '../core/engine.js';
 
-const MAX_LEN = 9;
+const MAX_LEN = QA ? 3 : 9; // QA 축약: 적응형 최대 길이만 3으로 (판정·진행은 동일)
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // 길이 len 시행: 0~9 무작위, 단 같은 숫자 연속 금지.
@@ -180,7 +180,7 @@ export function startDigitSpan({ id, scale = 1, showOn = 800, gap = 200, accent 
 
   async function* practiceTrials() {
     yield makeTrial(2);
-    yield makeTrial(2);
+    if (!QA) yield makeTrial(2); // QA 는 연습 1회만
   }
 
   const themeAccent = () => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#1D6F4F';

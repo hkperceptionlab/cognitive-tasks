@@ -35,6 +35,12 @@
 
 import { ENGINE_STRINGS, LANG_NAMES, detectLang, LANG_STORAGE_KEY } from './i18n.js';
 
+// QA 축약 모드: 주소에 ?qa=1 이면 각 과제가 '시행 수만' 최소로 줄인다(동작·판정·UI는 불변).
+// 자동 회귀(qa/check.mjs)를 빠르게 하려는 용도. 일반 사용자에게 노출되는 링크·UI 는 없다.
+export const QA = (() => {
+  try { return new URLSearchParams(location.search).get('qa') === '1'; } catch { return false; }
+})();
+
 const STORAGE_PREFIX = 'cog:';
 const MAX_STORED = 60;
 
@@ -595,7 +601,9 @@ export function runTask(config) {
     const poolGen = (pool) => (async function* () { for (const tr of pool) yield tr; })();
     if (phase === 'practice') {
       if (config.practiceTrials) return { gen: config.practiceTrials(), total: null };
-      const pool = shuffle(config.buildPracticePool()).slice(0, config.practiceCount || 5);
+      // QA 모드는 연습도 최소(2)로 — 시행 수만 줄일 뿐 연습 흐름 자체는 동일.
+      const cap = QA ? 2 : (config.practiceCount || 5);
+      const pool = shuffle(config.buildPracticePool()).slice(0, cap);
       return { gen: poolGen(pool), total: pool.length };
     }
     if (config.mainTrials) return { gen: config.mainTrials(), total: null };

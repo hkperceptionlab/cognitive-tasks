@@ -8,7 +8,7 @@
 // 앱마다 다른 것: id, scale(블록 크기), flashOn(점등 시간), flashGap(점등 간 간격).
 //   startCorsi({ id, scale, flashOn, flashGap })
 
-import { runTask } from '../core/engine.js';
+import { runTask, QA } from '../core/engine.js';
 
 // 9블록 '고정 불규칙' 배치. 격자가 아니라 불규칙이어야 위치를 언어로 외우지 못하고
 // 순수 시공간 기억을 잰다(Corsi 원판이 불규칙했던 이유). 정규화 좌표(0~1), 블록 중심 기준.
@@ -18,7 +18,7 @@ const POSITIONS = [
   [0.24, 0.44], [0.58, 0.40], [0.86, 0.48],
   [0.15, 0.74], [0.47, 0.72], [0.78, 0.80],
 ];
-const MAX_LEN = 9;
+const MAX_LEN = QA ? 3 : 9; // QA 축약: 적응형 최대 길이만 3으로 (판정·진행은 동일)
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 function shuffle(arr) {
@@ -190,7 +190,7 @@ export function startCorsi({ id, scale = 1, flashOn = 700, flashGap = 400, accen
   // 연습: 길이 2 두 번(규칙 학습용, 기록 안 함)
   async function* practiceTrials() {
     yield makeTrial(2);
-    yield makeTrial(2);
+    if (!QA) yield makeTrial(2); // QA 는 연습 1회만
   }
 
   // 그래프 시리즈 색도 계열 강조색(--accent)을 따른다(색을 따로 하드코딩하지 않음).

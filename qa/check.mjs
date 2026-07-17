@@ -44,6 +44,20 @@ const APPS = [
   { id: 'digitspan-adults', dir: 'digitspan-adults', kind: 'digitspan' },
 ];
 
+// 범위 지정: `node check.mjs`(전체) / `node check.mjs digitspan`(접두사 일치) / `node check.mjs stroop gonogo`.
+const ARGS = process.argv.slice(2);
+const SELECTED = APPS.filter((a) => ARGS.length === 0 || ARGS.some((x) => a.id.startsWith(x)));
+
+// 동시에 검사할 앱(=브라우저 인스턴스) 수. 8코어 머신에서 시행의 대부분은 점등·응시 '대기'라
+// CPU가 놀아, 선택 앱을 모두 동시에 돌리면 그 대기들이 겹쳐 전체가 3분 이내로 끝난다.
+// 범위 지정 시엔 min(PARALLEL, 선택 앱 수)만 뜬다.
+const PARALLEL = 8;
+const QA_SPAN = 3;    // QA 축약 모드에서 적응형 최대 길이(=성공 시 스팬)
+const QA_TRIALS = 4;  // 그때 본시행 수: 길이 2·3 각 2회 = 4
+
+// 모든 검사는 ?qa=1 축약 모드로 연다(시행 수만 최소, 판정·UI 는 실제와 동일).
+const urlFor = (dir, lang) => `http://localhost:${PORT}/${dir}/?lang=${lang}&qa=1`;
+
 // ── 정적 서버 (file:// 은 ES module 로딩이 막혀서 필요) ──────────────
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -171,7 +185,7 @@ async function checkApp(browser, app) {
   const add = (name, pass, detail) => checks.push({ name, pass, detail });
 
   // 회차 A — ko, 기존 기록 초기화하고 처음부터
-  const A = await playRun(browser, `http://localhost:${PORT}/${app.dir}/?lang=ko`, { clearId: app.id });
+  const A = await playRun(browser, urlFor(app.dir, 'ko'), { clearId: app.id });
   add('결과 화면 도달', A.reachedResults, A.reachedResults ? 'ok' : `${RUN_TIMEOUT}ms 내 요약 없음`);
   add('JS 에러 없음', A.errors.length === 0, A.errors.length ? A.errors.slice(0, 3).join(' / ') : 'none');
   if (A.reachedResults) {
@@ -182,7 +196,7 @@ async function checkApp(browser, app) {
   await A.page.close();
 
   // 회차 B — en. 저장소를 지우지 않아 A의 ko 세션이 남아있고, 그래프에서 걸러져야 한다.
-  const B = await playRun(browser, `http://localhost:${PORT}/${app.dir}/?lang=en`, {});
+  const B = await playRun(browser, urlFor(app.dir, 'en'), {});
   if (!B.reachedResults) {
     add('다른 언어 기록이 그래프에서 걸러짐', false, 'B 회차 결과 미도달');
   } else {
@@ -271,14 +285,14 @@ async function checkCorsi(browser, app) {
   const checks = [];
   const add = (name, pass, detail) => checks.push({ name, pass, detail });
 
-  // 정답봇 — 정상 진행(스팬 9까지 상승)
-  const ok = await playCorsi(browser, `http://localhost:${PORT}/${app.dir}/?lang=ko`, app.id, false);
+  // 정답봇 — 정상 진행(축약 모드에서 최대 길이까지 상승)
+  const ok = await playCorsi(browser, urlFor(app.dir, 'ko'), app.id, false);
   add('정답봇 결과 도달', ok.reached, ok.reached ? 'ok' : `${RUN_TIMEOUT}ms 내 요약 없음`);
   add('정답봇 JS 에러 없음', ok.errors.length === 0, ok.errors.length ? ok.errors.slice(0, 3).join(' / ') : 'none');
-  add('정답봇 적응형 스팬=9(2→…→9)', ok.span === 9 && ok.trialCount === 16, `span=${ok.span}·trials=${ok.trialCount}`);
+  add(`정답봇 적응형 스팬=${QA_SPAN}(2→…→${QA_SPAN})`, ok.span === QA_SPAN && ok.trialCount === QA_TRIALS, `span=${ok.span}·trials=${ok.trialCount}`);
 
   // 오답봇 — 첫 블록 오답 → 즉시 실패·행 없음(스팬 0, 2시행)
-  const no = await playCorsi(browser, `http://localhost:${PORT}/${app.dir}/?lang=ko`, app.id, true);
+  const no = await playCorsi(browser, urlFor(app.dir, 'ko'), app.id, true);
   add('오답봇 즉시 실패·행 없음', no.reached && no.errors.length === 0 && no.span === 0 && no.trialCount === 2,
     `도달=${no.reached}·에러${no.errors.length}·span=${no.span}·trials=${no.trialCount}`);
 
@@ -349,14 +363,14 @@ async function checkDigitSpan(browser, app) {
   const checks = [];
   const add = (name, pass, detail) => checks.push({ name, pass, detail });
 
-  // 정답봇 — 거꾸로 입력, 정상 진행(스팬 9)
-  const ok = await playDigitSpan(browser, `http://localhost:${PORT}/${app.dir}/?lang=ko`, app.id, true);
+  // 정답봇 — 거꾸로 입력, 정상 진행(축약 모드 최대 길이까지)
+  const ok = await playDigitSpan(browser, urlFor(app.dir, 'ko'), app.id, true);
   add('정답봇(거꾸로) 결과 도달', ok.reached, ok.reached ? 'ok' : `${RUN_TIMEOUT}ms 내 요약 없음`);
   add('정답봇 JS 에러 없음', ok.errors.length === 0, ok.errors.length ? ok.errors.slice(0, 3).join(' / ') : 'none');
-  add('정답봇 적응형 스팬=9(2→…→9)', ok.span === 9 && ok.trialCount === 16, `span=${ok.span}·trials=${ok.trialCount}`);
+  add(`정답봇 적응형 스팬=${QA_SPAN}(2→…→${QA_SPAN})`, ok.span === QA_SPAN && ok.trialCount === QA_TRIALS, `span=${ok.span}·trials=${ok.trialCount}`);
 
   // 오답봇 — '바로'(정순) 입력 → 거꾸로가 아니라 즉시 실패(스팬 0, 2시행). 뒤집기 로직 회귀 가드.
-  const no = await playDigitSpan(browser, `http://localhost:${PORT}/${app.dir}/?lang=ko`, app.id, false);
+  const no = await playDigitSpan(browser, urlFor(app.dir, 'ko'), app.id, false);
   add('오답봇(정순=거꾸로 아님) 즉시 실패', no.reached && no.errors.length === 0 && no.span === 0 && no.trialCount === 2,
     `도달=${no.reached}·에러${no.errors.length}·span=${no.span}·trials=${no.trialCount}`);
 
@@ -364,25 +378,46 @@ async function checkDigitSpan(browser, app) {
 }
 
 // ── 실행 ─────────────────────────────────────────────────────────────
+if (SELECTED.length === 0) {
+  console.error(`일치하는 앱이 없습니다: "${ARGS.join(' ')}". 예: digitspan / stroop gonogo / corsi-youth`);
+  process.exit(2);
+}
+
+const checkOne = (browser, app) =>
+  app.kind === 'corsi' ? checkCorsi(browser, app)
+    : app.kind === 'digitspan' ? checkDigitSpan(browser, app)
+      : checkApp(browser, app);
+
 const server = await startServer();
-const browser = await puppeteer.launch({
-  executablePath: CHROME, headless: 'new', args: ['--no-sandbox', '--disable-dev-shm-usage'],
-});
+// 진짜 병렬을 위해 브라우저 '인스턴스'를 여러 개 띄운다. 한 브라우저의 여러 페이지는 CDP 명령이
+// 직렬화돼 병렬 효과가 약하다. 각 워커가 자기 브라우저를 갖고 SELECTED 를 나눠 처리한다.
+const nBrowsers = Math.min(PARALLEL, SELECTED.length);
+const browsers = await Promise.all(Array.from({ length: nBrowsers }, () =>
+  puppeteer.launch({ executablePath: CHROME, headless: 'new', args: ['--no-sandbox', '--disable-dev-shm-usage'] })));
 
 let allPass = true;
 try {
-  for (const app of APPS) {
-    console.log(`\n▶ ${app.id} — 자동 플레이 중… (수십 초 소요)`);
-    const r = app.kind === 'corsi' ? await checkCorsi(browser, app)
-      : app.kind === 'digitspan' ? await checkDigitSpan(browser, app)
-      : await checkApp(browser, app);
+  console.log(`▶ ${SELECTED.length}개 앱 검사 (브라우저 ${nBrowsers}개 병렬, ?qa=1 축약 모드)…`);
+  const results = new Array(SELECTED.length);
+  let next = 0;
+  const worker = async (browser) => {
+    while (next < SELECTED.length) {
+      const idx = next++;
+      results[idx] = await checkOne(browser, SELECTED[idx]);
+    }
+  };
+  await Promise.all(browsers.map((b) => worker(b)));
+
+  // 결과는 SELECTED 순서대로 출력(병렬 완료 순서와 무관하게 읽기 쉽게)
+  for (const r of results) {
+    console.log(`\n▶ ${r.id}`);
     for (const c of r.checks) {
       if (!c.pass) allPass = false;
       console.log(`   ${c.pass ? '✅ PASS' : '❌ FAIL'}  ${c.name} — ${c.detail}`);
     }
   }
 } finally {
-  await browser.close();
+  await Promise.all(browsers.map((b) => b.close().catch(() => {})));
   server.close();
 }
 

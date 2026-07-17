@@ -2,7 +2,7 @@
 // 도형이 하나씩 나온다: 원(Go)=최대한 빨리 누르기 / 사각형(No-go)=누르지 말고 참기.
 // 색이 아니라 '도형'이 신호이므로 두 도형은 같은 색으로 그린다(색 이름 불필요).
 
-import { runTask } from '../core/engine.js';
+import { runTask, QA } from '../core/engine.js';
 
 // 응답 버튼은 하나뿐: '누르기'. Go 반응용.
 const SHAPE_COLOR = '#3949ab';
@@ -153,6 +153,8 @@ const STRINGS = {
 
 // 앱마다 다른 것: id, 문항 수, 제한시간(자극이 머무는 시간), 배율
 export function startGoNogo({ id, mainCounts, timeLimitMs, scale }) {
+  // QA 축약: 시행 수만 최소로(Go 6·No-go 2 = 8). 판정·자극·UI 는 그대로.
+  const counts = QA ? { go: 6, nogo: 2 } : mainCounts;
   runTask({
     id,
     mount: 'app',
@@ -162,7 +164,7 @@ export function startGoNogo({ id, mainCounts, timeLimitMs, scale }) {
     choices: CHOICES,
     isCorrect,
     buildPracticePool,
-    buildMainPool: () => buildMainPool(mainCounts),
+    buildMainPool: () => buildMainPool(counts),
     // 엔진의 renderStimulus 시그니처는 (trial, el, scale, t) — scale 은 --stim(em)로 흡수하므로 무시.
     renderStimulus: (trial, el, scale, t) => renderStimulus(trial, el, t),
     renderChoice,
