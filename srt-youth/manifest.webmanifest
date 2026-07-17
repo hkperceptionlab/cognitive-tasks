@@ -1,0 +1,20 @@
+{
+  "name": "단순 반응속도 (청소년)",
+  "short_name": "반응속도 청소년",
+  "description": "원이 초록으로 바뀌면 최대한 빨리 누르는 단순 반응속도 과제. 결과는 기기를 떠나지 않습니다.",
+  "lang": "ko",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fafafa",
+  "theme_color": "#6B2D5C",
+  "icons": [
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

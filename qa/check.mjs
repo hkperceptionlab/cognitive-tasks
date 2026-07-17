@@ -42,6 +42,8 @@ const APPS = [
   { id: 'corsi-adults',  dir: 'corsi-adults',  kind: 'corsi'   },
   { id: 'digitspan-youth',  dir: 'digitspan-youth',  kind: 'digitspan' },
   { id: 'digitspan-adults', dir: 'digitspan-adults', kind: 'digitspan' },
+  { id: 'srt-youth',  dir: 'srt-youth',  kind: 'srt' },
+  { id: 'srt-adults', dir: 'srt-adults', kind: 'srt' },
 ];
 
 // 범위 지정: `node check.mjs`(전체) / `node check.mjs digitspan`(접두사 일치) / `node check.mjs stroop gonogo`.
@@ -377,6 +379,103 @@ async function checkDigitSpan(browser, app) {
   return { id: app.id, checks };
 }
 
+// ── 단순 반응속도 점검 (판단 없음 — 초록으로 바뀌면 누르기) ──────────────
+// 정답봇: 초록 뒤 350ms 누름 → 유효(중앙값 ~350). 오답 3종을 각각 실측:
+//   early        : 자극(초록) 전에 누름 → 조기 반응으로 잡히는가
+//   anticipation : 초록 뒤 100ms(=<150ms) 누름 → 예측으로 무효 처리되는가
+//   noPress      : 아예 안 누름 → 시간초과로 잡히고 행(hang) 없이 끝나는가
+// 시행 경계는 진행표시(cog-progress) 변화로, 자극은 .srt-circle.go 로 감지.
+function installSRTBot(strategy) {
+  const st = { prog: '', greenAt: 0, pressedThis: false };
+  const press = () => { const w = document.querySelector('.srt-wrap'); if (w) w.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' })); };
+  window.__srtTimer = setInterval(() => {
+    const panel = document.getElementById('cog-panel');
+    if (panel && !panel.hidden && panel.querySelector('.summary')) return;
+    const circle = document.querySelector('.srt-circle');
+    const progEl = document.getElementById('cog-progress');
+    if (!circle || !progEl) return;
+    const prog = progEl.textContent;
+    if (prog !== st.prog) {               // 새 시행(진행표시 변화)
+      st.prog = prog; st.pressedThis = false; st.greenAt = 0;
+      if (strategy === 'early') {         // 대기 중(최소 1000ms) 조기 누름
+        st.pressedThis = true;
+        setTimeout(press, 400);
+      }
+    }
+    const go = circle.classList.contains('go');
+    if (go && !st.greenAt) {              // 초록 상승엣지
+      st.greenAt = performance.now();
+      if (!st.pressedThis && (strategy === 'correct' || strategy === 'anticipation')) {
+        st.pressedThis = true;
+        setTimeout(press, strategy === 'correct' ? 350 : 100); // 100ms → <150 예측
+      }
+    }
+    if (!go && st.greenAt) st.greenAt = 0;
+    // noPress: 아무 것도 안 누름
+  }, 25);
+}
+
+async function playSRT(browser, url, id, strategy) {
+  const page = await browser.newPage();
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+  page.on('console', (m) => { if (m.type() === 'error') errors.push('console.error: ' + m.text()); });
+  await page.goto(url, { waitUntil: 'load' });
+  await page.evaluate((i) => { try { localStorage.removeItem('cog:' + i + ':sessions'); } catch {} }, id);
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('#cog-action', { timeout: 15000 });
+  await page.evaluate(installSRTBot, strategy);
+  const t0 = Date.now();
+  let reached = false;
+  while (Date.now() - t0 < RUN_TIMEOUT) {
+    const st = await page.evaluate(() => {
+      const panel = document.getElementById('cog-panel');
+      return { visible: panel && !panel.hidden, hasSummary: !!(panel && panel.querySelector('.summary')),
+        hasAction: !!(panel && panel.querySelector('#cog-action')) };
+    });
+    if (st.visible && st.hasSummary) { reached = true; break; }
+    if (st.visible && st.hasAction && !st.hasSummary) { await page.click('#cog-action').catch(() => {}); await sleep(120); }
+    await sleep(100);
+  }
+  // 요약 값을 순서대로 읽는다: [중앙값, 평균, 최소, 조기, 시간초과].
+  // 값은 <b> 의 첫 텍스트노드(예: "365 ms"/"—")만 — 뒤의 (N문항) count 스팬의 숫자를 잡지 않도록.
+  const vals = reached ? await page.evaluate(() =>
+    [...document.querySelectorAll('#cog-panel .summary .row b')].map((b) => {
+      const txt = b.firstChild ? b.firstChild.textContent : b.textContent;
+      const m = txt.match(/-?\d+/); return m ? parseInt(m[0], 10) : null;
+    })) : [];
+  await page.close();
+  return { errors, reached, vals };
+}
+
+async function checkSRT(browser, app) {
+  const checks = [];
+  const add = (name, pass, detail) => checks.push({ name, pass, detail });
+  const url = (s) => urlFor(app.dir, 'ko');
+
+  const c = await playSRT(browser, url(), app.id, 'correct');
+  add('정답봇 결과 도달', c.reached, c.reached ? 'ok' : `${RUN_TIMEOUT}ms 내 요약 없음`);
+  add('정답봇 JS 에러 없음', c.errors.length === 0, c.errors.length ? c.errors.slice(0, 3).join(' / ') : 'none');
+  add('정답봇 유효 반응(중앙값 150~1500ms·조기0·초과0)',
+    c.reached && c.vals[0] != null && c.vals[0] >= 150 && c.vals[0] <= 1500 && c.vals[3] === 0 && c.vals[4] === 0,
+    `중앙값=${c.vals[0]}·조기=${c.vals[3]}·초과=${c.vals[4]}`);
+
+  const e = await playSRT(browser, url(), app.id, 'early');
+  add('조기 반응 잡힘(조기≥1·유효0)',
+    e.reached && e.errors.length === 0 && e.vals[3] >= 1 && e.vals[0] === null, `조기=${e.vals[3]}·중앙값=${e.vals[0]}`);
+
+  const a = await playSRT(browser, url(), app.id, 'anticipation');
+  add('예측(100ms) 무효(조기≥1·유효0)',
+    a.reached && a.errors.length === 0 && a.vals[3] >= 1 && a.vals[0] === null, `조기=${a.vals[3]}·중앙값=${a.vals[0]}`);
+
+  const n = await playSRT(browser, url(), app.id, 'noPress');
+  add('안 누름=시간초과·행 없음(초과≥1·유효0)',
+    n.reached && n.errors.length === 0 && n.vals[4] >= 1 && n.vals[0] === null, `초과=${n.vals[4]}·도달=${n.reached}`);
+
+  return { id: app.id, checks };
+}
+
 // ── 실행 ─────────────────────────────────────────────────────────────
 if (SELECTED.length === 0) {
   console.error(`일치하는 앱이 없습니다: "${ARGS.join(' ')}". 예: digitspan / stroop gonogo / corsi-youth`);
@@ -386,7 +485,8 @@ if (SELECTED.length === 0) {
 const checkOne = (browser, app) =>
   app.kind === 'corsi' ? checkCorsi(browser, app)
     : app.kind === 'digitspan' ? checkDigitSpan(browser, app)
-      : checkApp(browser, app);
+      : app.kind === 'srt' ? checkSRT(browser, app)
+        : checkApp(browser, app);
 
 const server = await startServer();
 // 진짜 병렬을 위해 브라우저 '인스턴스'를 여러 개 띄운다. 한 브라우저의 여러 페이지는 CDP 명령이
