@@ -1,0 +1,20 @@
+{
+  "name": "멈추기 과제 (청소년)",
+  "short_name": "멈추기 청소년",
+  "description": "화살표에 반응하다가 빨간 신호에 멈추는 반응 억제(Stop-signal) 과제. 결과는 기기를 떠나지 않습니다.",
+  "lang": "ko",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fafafa",
+  "theme_color": "#3949ab",
+  "icons": [
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

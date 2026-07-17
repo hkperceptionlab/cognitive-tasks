@@ -46,6 +46,8 @@ const APPS = [
   { id: 'srt-adults', dir: 'srt-adults', kind: 'srt' },
   { id: 'simon-youth',  dir: 'simon-youth',  kind: 'simon' },
   { id: 'simon-adults', dir: 'simon-adults', kind: 'simon' },
+  { id: 'stopsignal-youth',  dir: 'stopsignal-youth',  kind: 'stopsignal' },
+  { id: 'stopsignal-adults', dir: 'stopsignal-adults', kind: 'stopsignal' },
 ];
 
 // 범위 지정: `node check.mjs`(전체) / `node check.mjs digitspan`(접두사 일치) / `node check.mjs stroop gonogo`.
@@ -572,6 +574,85 @@ async function checkSimon(browser, app) {
   return { id: app.id, checks };
 }
 
+// ── 멈추기(Stop-signal) 점검 ───────────────────────────────────────────
+// correct : 화살표 표시 350ms 후, 이미 빨강(멈춤 신호)이면 참고 아니면 방향대로 누름
+//           → stop 은 SSD 낮을 때만 멈춤 성공 → 계단식이 양방향으로 움직여 성공률 0<..<100.
+// wrong   : 빨강을 무시하고 항상 방향대로 누름 → stop 전부 실패(성공률 0), SSD 계속 하강.
+function installStopBot(strategy) {
+  window.__seen = new Set();
+  window.__ssTimer = setInterval(() => {
+    const panel = document.getElementById('cog-panel');
+    if (panel && !panel.hidden && panel.querySelector('.summary')) return;
+    const arrow = document.querySelector('.ss-arrow');
+    const prog = document.getElementById('cog-progress');
+    if (!arrow || !arrow.dataset.dir) return;         // 화살표 표시 중일 때만
+    const key = (prog ? prog.textContent : '') + '|' + arrow.dataset.dir;
+    if (window.__seen.has(key)) return;
+    window.__seen.add(key);
+    setTimeout(() => {
+      const a = document.querySelector('.ss-arrow');
+      if (!a || !a.dataset.dir) return;
+      if (strategy === 'correct' && a.classList.contains('stop')) return; // 멈춤 신호 보이면 참음
+      const btn = document.querySelector('.ss-key[data-dir="' + a.dataset.dir + '"]');
+      if (btn && !btn.disabled) btn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' }));
+    }, 350);
+  }, 20);
+}
+
+async function playStop(browser, url, id, strategy) {
+  const page = await browser.newPage();
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+  page.on('console', (m) => { if (m.type() === 'error') errors.push('console.error: ' + m.text()); });
+  await page.goto(url, { waitUntil: 'load' });
+  await page.evaluate((i) => { try { localStorage.removeItem('cog:' + i + ':sessions'); } catch {} }, id);
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('#cog-action', { timeout: 15000 });
+  await page.evaluate(installStopBot, strategy);
+  const t0 = Date.now();
+  let reached = false;
+  while (Date.now() - t0 < RUN_TIMEOUT) {
+    const st = await page.evaluate(() => {
+      const panel = document.getElementById('cog-panel');
+      return { visible: panel && !panel.hidden, hasSummary: !!(panel && panel.querySelector('.summary')),
+        hasAction: !!(panel && panel.querySelector('#cog-action')) };
+    });
+    if (st.visible && st.hasSummary) { reached = true; break; }
+    if (st.visible && st.hasAction && !st.hasSummary) { await page.click('#cog-action').catch(() => {}); await sleep(120); }
+    await sleep(100);
+  }
+  const info = reached ? await page.evaluate(() => {
+    const panel = document.getElementById('cog-panel');
+    const val = (i) => { const b = panel.querySelectorAll('.summary .row b')[i];
+      const txt = b && b.firstChild ? b.firstChild.textContent : (b ? b.textContent : '');
+      const m = txt.match(/-?\d+/); return m ? parseInt(m[0], 10) : null; };
+    return { goMedian: val(0), stopRate: val(2), spark: !!panel.querySelector('.ss-spark svg') };
+  }) : { goMedian: null, stopRate: null, spark: false };
+  await page.close();
+  return { errors, reached, ...info };
+}
+
+async function checkStopSignal(browser, app) {
+  const checks = [];
+  const add = (name, pass, detail) => checks.push({ name, pass, detail });
+
+  const c = await playStop(browser, urlFor(app.dir, 'ko'), app.id, 'correct');
+  add('정답봇 결과 도달', c.reached, c.reached ? 'ok' : `${RUN_TIMEOUT}ms 내 요약 없음`);
+  add('정답봇 JS 에러 없음', c.errors.length === 0, c.errors.length ? c.errors.slice(0, 3).join(' / ') : 'none');
+  add('Go RT 기록·멈춤 계단식 수렴(0<성공률<100)',
+    c.reached && c.goMedian != null && c.goMedian >= 100 && c.stopRate != null && c.stopRate > 0 && c.stopRate < 100,
+    `GoRT=${c.goMedian}·멈춤성공률=${c.stopRate}%`);
+  add('SSD 궤적 스파크라인(extraHtml) 렌더', c.reached && c.spark, `spark=${c.spark}`);
+
+  const w = await playStop(browser, urlFor(app.dir, 'ko'), app.id, 'wrong');
+  add('오답봇(stop 무시): 멈춤 성공률 0·행 없음',
+    w.reached && w.errors.length === 0 && w.goMedian != null && w.stopRate === 0,
+    `도달=${w.reached}·에러${w.errors.length}·GoRT=${w.goMedian}·멈춤성공률=${w.stopRate}%`);
+
+  return { id: app.id, checks };
+}
+
 // ── 실행 ─────────────────────────────────────────────────────────────
 if (SELECTED.length === 0) {
   console.error(`일치하는 앱이 없습니다: "${ARGS.join(' ')}". 예: digitspan / stroop gonogo / corsi-youth`);
@@ -583,7 +664,8 @@ const checkOne = (browser, app) =>
     : app.kind === 'digitspan' ? checkDigitSpan(browser, app)
       : app.kind === 'srt' ? checkSRT(browser, app)
         : app.kind === 'simon' ? checkSimon(browser, app)
-          : checkApp(browser, app);
+          : app.kind === 'stopsignal' ? checkStopSignal(browser, app)
+            : checkApp(browser, app);
 
 const server = await startServer();
 // 진짜 병렬을 위해 브라우저 '인스턴스'를 여러 개 띄운다. 한 브라우저의 여러 페이지는 CDP 명령이
