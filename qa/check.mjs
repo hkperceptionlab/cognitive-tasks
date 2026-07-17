@@ -40,6 +40,8 @@ const APPS = [
   { id: 'gonogo-adults', dir: 'gonogo-adults', kind: 'default' },
   { id: 'corsi-youth',   dir: 'corsi-youth',   kind: 'corsi'   },
   { id: 'corsi-adults',  dir: 'corsi-adults',  kind: 'corsi'   },
+  { id: 'digitspan-youth',  dir: 'digitspan-youth',  kind: 'digitspan' },
+  { id: 'digitspan-adults', dir: 'digitspan-adults', kind: 'digitspan' },
 ];
 
 // ── 정적 서버 (file:// 은 ES module 로딩이 막혀서 필요) ──────────────
@@ -283,6 +285,84 @@ async function checkCorsi(browser, app) {
   return { id: app.id, checks };
 }
 
+// ── 숫자 거꾸로 점검 (코시와 같은 적응형·다중응답, 단 응답은 '거꾸로') ──────
+// 정답봇  : 제시된 숫자를 관찰해 '거꾸로' 키패드 입력 → 길이 2→…→9, 스팬 9
+// 오답봇  : 일부러 '바로'(정순) 입력 → 거꾸로가 아니므로 즉시 실패, 스팬 0
+//          (정답봇만 돌리면 '뒤집기 로직이 깨진' 회귀를, 오답봇만 돌리면 '정상 진행 깨짐'을 놓침)
+function installDigitSpanBot(doReverse) {
+  const st = { shown: [], inShow: false, wasRecall: false, responded: false };
+  const S = (ms) => new Promise((r) => setTimeout(r, ms));
+  const tap = (d) => {
+    const el = document.querySelector('.ds-pad .ds-key[data-digit="' + d + '"]');
+    if (el) el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' }));
+  };
+  window.__dsTimer = setInterval(async () => {
+    const wrap = document.querySelector('.ds-wrap');
+    const panel = document.getElementById('cog-panel');
+    if (panel && !panel.hidden && panel.querySelector('.summary')) return;
+    if (!wrap) return;
+    const recall = wrap.classList.contains('recall');
+    const disp = (wrap.querySelector('.ds-display') || {}).textContent || '';
+    if (!recall) {
+      if (disp !== '') { if (!st.inShow) { st.shown.push(Number(disp)); st.inShow = true; } }
+      else st.inShow = false;
+    }
+    if (recall && !st.responded) {
+      st.responded = true;
+      const order = doReverse ? st.shown.slice().reverse() : st.shown.slice();
+      for (const d of order) { tap(d); await S(90); }
+    }
+    if (st.wasRecall && !recall) { st.shown = []; st.inShow = false; st.responded = false; }
+    st.wasRecall = recall;
+  }, 30);
+}
+
+async function playDigitSpan(browser, url, id, doReverse) {
+  const page = await browser.newPage();
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+  page.on('console', (m) => { if (m.type() === 'error') errors.push('console.error: ' + m.text()); });
+  await page.goto(url, { waitUntil: 'load' });
+  await page.evaluate((i) => { try { localStorage.removeItem('cog:' + i + ':sessions'); } catch {} }, id);
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('#cog-action', { timeout: 15000 });
+  await page.evaluate(installDigitSpanBot, doReverse);
+  const t0 = Date.now();
+  let reached = false;
+  while (Date.now() - t0 < RUN_TIMEOUT) {
+    const st = await page.evaluate(() => {
+      const panel = document.getElementById('cog-panel');
+      return { visible: panel && !panel.hidden, hasSummary: !!(panel && panel.querySelector('.summary')),
+        hasAction: !!(panel && panel.querySelector('#cog-action')) };
+    });
+    if (st.visible && st.hasSummary) { reached = true; break; }
+    if (st.visible && st.hasAction && !st.hasSummary) { await page.click('#cog-action').catch(() => {}); await sleep(120); }
+    await sleep(100);
+  }
+  const sess = (await readSessions(page, id)).slice(-1)[0] || null;
+  await page.close();
+  return { errors, reached, span: sess ? sess.values.span : null, trialCount: sess ? sess.trialCount : null };
+}
+
+async function checkDigitSpan(browser, app) {
+  const checks = [];
+  const add = (name, pass, detail) => checks.push({ name, pass, detail });
+
+  // 정답봇 — 거꾸로 입력, 정상 진행(스팬 9)
+  const ok = await playDigitSpan(browser, `http://localhost:${PORT}/${app.dir}/?lang=ko`, app.id, true);
+  add('정답봇(거꾸로) 결과 도달', ok.reached, ok.reached ? 'ok' : `${RUN_TIMEOUT}ms 내 요약 없음`);
+  add('정답봇 JS 에러 없음', ok.errors.length === 0, ok.errors.length ? ok.errors.slice(0, 3).join(' / ') : 'none');
+  add('정답봇 적응형 스팬=9(2→…→9)', ok.span === 9 && ok.trialCount === 16, `span=${ok.span}·trials=${ok.trialCount}`);
+
+  // 오답봇 — '바로'(정순) 입력 → 거꾸로가 아니라 즉시 실패(스팬 0, 2시행). 뒤집기 로직 회귀 가드.
+  const no = await playDigitSpan(browser, `http://localhost:${PORT}/${app.dir}/?lang=ko`, app.id, false);
+  add('오답봇(정순=거꾸로 아님) 즉시 실패', no.reached && no.errors.length === 0 && no.span === 0 && no.trialCount === 2,
+    `도달=${no.reached}·에러${no.errors.length}·span=${no.span}·trials=${no.trialCount}`);
+
+  return { id: app.id, checks };
+}
+
 // ── 실행 ─────────────────────────────────────────────────────────────
 const server = await startServer();
 const browser = await puppeteer.launch({
@@ -293,7 +373,9 @@ let allPass = true;
 try {
   for (const app of APPS) {
     console.log(`\n▶ ${app.id} — 자동 플레이 중… (수십 초 소요)`);
-    const r = app.kind === 'corsi' ? await checkCorsi(browser, app) : await checkApp(browser, app);
+    const r = app.kind === 'corsi' ? await checkCorsi(browser, app)
+      : app.kind === 'digitspan' ? await checkDigitSpan(browser, app)
+      : await checkApp(browser, app);
     for (const c of r.checks) {
       if (!c.pass) allPass = false;
       console.log(`   ${c.pass ? '✅ PASS' : '❌ FAIL'}  ${c.name} — ${c.detail}`);

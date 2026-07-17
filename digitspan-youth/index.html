@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>숫자 거꾸로 (청소년)</title>
+  <meta name="theme-color" content="#1D6F4F" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icons/icon.svg" />
+  <link rel="apple-touch-icon" href="./icons/icon.svg" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+</head>
+<body>
+  <div id="app"></div>
+
+  <script type="module">
+    import { startDigitSpan } from '../digitspan-common/digitspan.js';
+
+    // 청소년: 숫자 표시 800ms, 간격 200ms, 기본 크기
+    startDigitSpan({
+      id: 'digitspan-youth',
+      scale: 1,
+      showOn: 800,
+      gap: 200,
+    });
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    }
+  </script>
+</body>
+</html>
