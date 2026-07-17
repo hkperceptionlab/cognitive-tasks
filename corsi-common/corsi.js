@@ -43,8 +43,8 @@ function injectStyles() {
 .corsi-block{position:absolute;border-radius:14%;background:#c7cfe0;
   box-shadow:0 1px 3px rgba(0,0,0,.18);transition:background .06s,transform .06s}
 .corsi-board.recall .corsi-block{cursor:pointer}
-.corsi-block.lit{background:#3949ab;transform:scale(1.06);box-shadow:0 3px 10px rgba(57,73,171,.5)}
-.corsi-block.tap{background:#5c6bc0}
+.corsi-block.lit{background:var(--accent);transform:scale(1.06);box-shadow:0 3px 10px rgba(0,0,0,.28)}
+.corsi-block.tap{background:var(--accent);opacity:.55}
 /* 재현(recall) 단계가 아니면 블록 클릭을 완전히 무시한다 — 점등 중 클릭이 응답으로 새는 것 방지 */
 .corsi-board:not(.recall) .corsi-block{pointer-events:none}
 /* 시행 종료 표시(300ms): 성공/실패만. 어디서 틀렸는지·정답은 절대 드러내지 않는다 */
@@ -55,7 +55,7 @@ function injectStyles() {
   document.head.appendChild(el);
 }
 
-export function startCorsi({ id, scale = 1, flashOn = 700, flashGap = 400 }) {
+export function startCorsi({ id, scale = 1, flashOn = 700, flashGap = 400, accent }) {
   injectStyles();
   const blockFrac = 0.16 * scale;          // 블록 폭(판 대비). 성인 scale 1.5 → 0.24
   let board = null, blocks = [];
@@ -193,6 +193,9 @@ export function startCorsi({ id, scale = 1, flashOn = 700, flashGap = 400 }) {
     yield makeTrial(2);
   }
 
+  // 그래프 시리즈 색도 계열 강조색(--accent)을 따른다(색을 따로 하드코딩하지 않음).
+  const themeAccent = () => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#1D6F4F';
+
   function analyze(records, t) {
     const ok = records.filter((r) => r.success);
     const span = ok.length ? Math.max(...ok.map((r) => r.length)) : 0;
@@ -203,7 +206,7 @@ export function startCorsi({ id, scale = 1, flashOn = 700, flashGap = 400 }) {
         { label: t('totalSuccess'), value: total, unit: t('trialsUnit') },
       ],
       series: [
-        { key: 'span', label: t('span'), value: span, color: '#3949ab', group: 'span' },
+        { key: 'span', label: t('span'), value: span, color: themeAccent(), group: 'span' },
       ],
       topNotes: [t('taskNote')],
     };
@@ -213,6 +216,8 @@ export function startCorsi({ id, scale = 1, flashOn = 700, flashGap = 400 }) {
     id,
     mount: 'app',
     scale,
+    family: 'memory',            // 기억 계열 → 진한 초록 (색은 엔진 FAMILY_COLORS 한 곳에서)
+    accent,                      // 앱이 index.html 에서 예외 지정 시 그 색이 우선
     choices: [],                 // 응답 버튼 없음 — 자극판 자체가 응답 표면
     timing: { fixation: [400, 600], isi: [500, 700], feedbackMs: 650, flashOn, flashGap },
     practiceTrials,

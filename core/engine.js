@@ -38,6 +38,15 @@ import { ENGINE_STRINGS, LANG_NAMES, detectLang, LANG_STORAGE_KEY } from './i18n
 const STORAGE_PREFIX = 'cog:';
 const MAX_STORED = 60;
 
+// 과제 계열별 강조색(--accent)을 여기 한 곳에서 정의한다. 앱마다 색을 하드코딩하지 않고
+// 과제가 config.family 로 계열만 고르면 된다. 계열이 늘면(속도·전환, 언어 등) 여기만 추가.
+// 개별 앱이 예외로 덮어써야 하면(예: 스트룹을 무채색으로) config.accent 로 직접 지정한다.
+const FAMILY_COLORS = {
+  inhibition: '#3949ab', // 스트룹, Go/No-go (파랑, 기본값)
+  memory: '#1D6F4F',     // 코시, 숫자 거꾸로 (진한 초록)
+};
+const DEFAULT_ACCENT = FAMILY_COLORS.inhibition;
+
 // ── 유틸 ────────────────────────────────────────────────
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -354,6 +363,10 @@ export function runTask(config) {
   document.documentElement.lang = lang;
   injectStyles();
   document.documentElement.style.setProperty('--scale', scale);
+  // 강조색: 앱이 명시한 config.accent > 계열색 FAMILY_COLORS[config.family] > 기본(파랑).
+  // inline 로 넣어 injectStyles 의 :root 기본값을 확실히 덮는다.
+  const accent = config.accent || FAMILY_COLORS[config.family] || DEFAULT_ACCENT;
+  document.documentElement.style.setProperty('--accent', accent);
 
   const mount = document.getElementById(config.mount || 'app');
   mount.innerHTML = '';
