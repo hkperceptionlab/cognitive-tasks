@@ -148,6 +148,9 @@ function analyze(records, t) {
     summaryRows.push({ label: t(c + 'R2'), value: r2 == null ? '—' : r2.toFixed(2), unit: '' }); // R²는 그대로 보여 '왜 —인지' 드러냄
     if (points.length < 2) topNotes.push(t('fewPointsNote', { c: t(c + 'Name') }));
     else if (!gateOk) topNotes.push(t('slopeGateNote', { c: t(c + 'Name') }));
+    // 특징 탐색 기울기가 게이트 통과('—' 아님)인데 음수면: 물리적으로 말이 안 되니 표본 잡음일 가능성 안내
+    // (판정 아님·해석 도움말. 새 임계값/게이트 로직 없이 기존 shownSlope 만 참조).
+    if (c === 'feature' && shownSlope != null && shownSlope < 0) topNotes.push(t('featureNegNote'));
     charts.push(vsChart(t(c + 'Chart'), points, gateOk ? reg : null, t)); // 게이트 시 회귀선 빼고 점만(오해 방지)
   }
 
@@ -350,6 +353,7 @@ const STRINGS = {
     setsizeAxis: '항목 수', accGridTitle: '조건 × 항목 수 정답률(%)',
     taskNote: '방해 자극이 색 하나로만 다르면(특징 탐색) 빨간 원이 저절로 튀어 보여, 항목이 많아져도 찾는 시간이 거의 안 늘어납니다. 색과 모양을 함께 봐야 하면(결합 탐색) 하나씩 훑게 되어, 항목이 많을수록 느려집니다. 그 늘어나는 정도가 ‘기울기’입니다.',
     sampleNote: '항목 수당 시행이 몇 개뿐이라 기울기·R²가 회차마다 크게 달라질 수 있습니다. 정밀한 측정이 아닙니다.',
+    featureNegNote: '특징 탐색은 이론적으로 항목이 늘어도 속도가 거의 안 변합니다(기울기 0에 가까움). 이 기울기가 마이너스로 나왔다면, 실제로 빨라진 게 아니라 표본이 적어 생긴 우연한 잡음일 가능성이 큽니다.',
     fewPointsNote: '{c} 탐색은 유효한(있음·정답) 응답이 있는 항목 수가 2개 미만이라 기울기를 계산할 수 없습니다.',
     slopeGateNote: '{c} 탐색은 점들이 직선을 이루지 않아(R²가 낮아) 기울기를 신뢰할 수 없어 표시하지 않습니다.',
     chanceNote: '다음 칸은 정답률이 우연 수준(50%)에 가까워, 찍었을 가능성이 있어 해석하기 어렵습니다: {cells}.',
@@ -369,6 +373,7 @@ const STRINGS = {
     setsizeAxis: 'set size', accGridTitle: 'Accuracy by condition × set size (%)',
     taskNote: 'When distractors differ by just one color (feature search), the red circle pops out, so adding more items barely changes the search time. When you must combine color and shape (conjunction search), you scan one by one, so more items means slower. How much slower is the “slope”.',
     sampleNote: 'There are only a few trials per set size, so the slope and R² can vary a lot from run to run. This is not a precise measurement.',
+    featureNegNote: 'In feature search the speed theoretically barely changes as items increase (the slope is near zero). If this slope came out negative, it most likely does not mean you actually got faster — it is probably chance noise from the small sample.',
     fewPointsNote: '{c} search has fewer than two set sizes with a valid (present, correct) response, so the slope cannot be computed.',
     slopeGateNote: '{c} search: the points do not fall on a line (low R²), so the slope is not trustworthy and is not shown.',
     chanceNote: 'These cells have accuracy near chance (50%), so answers may have been guesses and are hard to interpret: {cells}.',
@@ -388,6 +393,7 @@ const STRINGS = {
     setsizeAxis: '项目数', accGridTitle: '条件 × 项目数 正确率(%)',
     taskNote: '当干扰项只在一种颜色上不同（特征搜索）时，红色圆形会自己“跳”出来，所以项目再多，搜索时间几乎不变。若必须同时看颜色和形状（结合搜索），就要一个一个地看，项目越多越慢。变慢的程度就是“斜率”。',
     sampleNote: '每个项目数只有几个试次，所以斜率和 R² 每次差别很大。这不是精确测量。',
+    featureNegNote: '特征搜索理论上即使项目增多速度也几乎不变（斜率接近 0）。如果这个斜率出现负值，很可能并不是你真的变快了，而是样本太少产生的偶然噪声。',
     fewPointsNote: '{c}搜索中，有有效（有目标且正确）反应的项目数少于两个，无法计算斜率。',
     slopeGateNote: '{c}搜索：这些点不成一条直线（R² 低），斜率不可靠，故不显示。',
     chanceNote: '以下格子的正确率接近随机水平（50%），可能是猜的，难以解读：{cells}。',
@@ -407,6 +413,7 @@ const STRINGS = {
     setsizeAxis: 'nº de elementos', accGridTitle: 'Precisión por condición × nº de elementos (%)',
     taskNote: 'Cuando los distractores difieren en un solo color (búsqueda por rasgo), el círculo rojo resalta solo, así que añadir más elementos apenas cambia el tiempo. Si hay que combinar color y forma (búsqueda por conjunción), miras uno a uno, así que más elementos significa más lento. Cuánto más lento es la “pendiente”.',
     sampleNote: 'Solo hay unos pocos ensayos por nº de elementos, así que la pendiente y el R² varían mucho entre rondas. No es una medición precisa.',
+    featureNegNote: 'En la búsqueda por rasgo la velocidad teóricamente apenas cambia al aumentar los elementos (la pendiente es casi cero). Si esta pendiente salió negativa, lo más probable es que no te hayas vuelto más rápido de verdad, sino que sea ruido casual por la muestra pequeña.',
     fewPointsNote: 'La búsqueda por {c} tiene menos de dos tamaños con una respuesta válida (presente, correcta), así que la pendiente no puede calcularse.',
     slopeGateNote: 'Búsqueda por {c}: los puntos no forman una recta (R² bajo), así que la pendiente no es fiable y no se muestra.',
     chanceNote: 'Estas celdas tienen precisión cercana al azar (50%), así que las respuestas pueden ser adivinanzas y son difíciles de interpretar: {cells}.',
