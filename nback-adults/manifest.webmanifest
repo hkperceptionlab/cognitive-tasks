@@ -1,0 +1,20 @@
+{
+  "name": "이어서 기억하기 (성인)",
+  "short_name": "이어서 성인",
+  "description": "글자 흐름에서 몇 개 전과 같은 글자를 짚는 N-back 과제. 브레인트레이닝이 판 바로 그 과제이며, 훈련이 아니라 전시가 목적입니다. 결과는 기기를 떠나지 않습니다.",
+  "lang": "ko",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fafafa",
+  "theme_color": "#1D6F4F",
+  "icons": [
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

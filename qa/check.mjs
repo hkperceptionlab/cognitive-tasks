@@ -50,6 +50,8 @@ const APPS = [
   { id: 'stopsignal-adults', dir: 'stopsignal-adults', kind: 'stopsignal' },
   { id: 'rotation-youth',  dir: 'rotation-youth',  kind: 'rotation' },
   { id: 'rotation-adults', dir: 'rotation-adults', kind: 'rotation' },
+  { id: 'nback-youth',  dir: 'nback-youth',  kind: 'nback' },
+  { id: 'nback-adults', dir: 'nback-adults', kind: 'nback' },
 ];
 
 // 범위 지정: `node check.mjs`(전체) / `node check.mjs digitspan`(접두사 일치) / `node check.mjs stroop gonogo`.
@@ -767,6 +769,145 @@ async function checkRotation(browser, app) {
   return { id: app.id, checks };
 }
 
+// ── 이어서 기억하기(N-back) 점검 ───────────────────────────────────────
+// 이 과제의 진짜 대조군은 '아무 때나 누르는 봇'이다. 정확도(한 숫자)만 보면 그럴싸해 보이지만
+// 적중률·오경보율 두 숫자로 보면 오경보가 함께 높아 실력이 아님이 드러난다. 네 봇을 실측한다:
+//   correct : 관찰한 글자로 n개 전을 스스로 계산해 표적에만 누름 → 적중 100%·오경보 0%(두 숫자 갈라짐).
+//   anytime : 자극마다 60% 확률로 누름 → 적중도 오경보도 함께 높음(두 숫자 안 갈라짐 = UI가 잡아내야 함).
+//   always  : 모든 자극에 누름 → 적중 100%·오경보 100%(오경보가 100%로 크게 보이는가).
+//   never   : 하나도 안 누름 → 적중 0%·오경보 0%(흰 화면 없이 '0'으로 뜨는가).
+// 봇은 화면에 노출된 글자·위치(data-*)만 읽어 사람이 보는 정보로 판단한다(정답 자체를 읽지 않음).
+// 블록 인트로 '시작' 버튼(.nb-intro-btn)과 엔진 패널 버튼(#cog-action)도 눌러 진행시킨다.
+function installNbackBot(strategy) {
+  const st = { hist: [], seen: -1 };
+  window.__nbTimer = setInterval(() => {
+    const panel = document.getElementById('cog-panel');
+    if (panel && !panel.hidden && panel.querySelector('.summary')) return; // 결과 도달 → 멈춤
+    const intro = document.querySelector('.nb-intro-btn');
+    if (intro) { intro.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' })); return; }
+    const stage = document.querySelector('.nb-stage');
+    if (!stage || !stage.dataset.seq) return;
+    const seq = Number(stage.dataset.seq);
+    if (seq === st.seen) return;         // 같은 자극 한 번만 처리
+    st.seen = seq;
+    const n = Number(stage.dataset.n);
+    const pos = Number(stage.dataset.pos);
+    const letter = stage.dataset.letter;
+    if (pos === 0) st.hist = [];         // 스트림(연습/채점) 시작마다 n-back 이력 초기화
+    st.hist[pos] = letter;
+    const isTarget = pos >= n && st.hist[pos - n] === letter; // 관찰로 계산(사람과 동일한 판단)
+    let press = false;
+    if (strategy === 'correct') press = isTarget;
+    else if (strategy === 'always') press = true;
+    else if (strategy === 'anytime') press = Math.random() < 0.6;
+    else press = false;                  // never
+    if (press) setTimeout(() => {
+      const btn = document.querySelector('.nb-match');
+      if (btn) btn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' }));
+    }, 60);
+  }, 15);
+}
+
+async function playNback(browser, url, id, strategy) {
+  const page = await browser.newPage();
+  await page.setViewport({ width: 390, height: 900, deviceScaleFactor: 2 });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+  page.on('console', (m) => { if (m.type() === 'error') errors.push('console.error: ' + m.text()); });
+  await page.goto(url, { waitUntil: 'load' });
+  await page.evaluate((i) => { try { localStorage.removeItem('cog:' + i + ':sessions'); } catch {} }, id);
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('#cog-action', { timeout: 15000 });
+  await page.evaluate(installNbackBot, strategy);
+  const t0 = Date.now();
+  let reached = false;
+  while (Date.now() - t0 < RUN_TIMEOUT) {
+    const st = await page.evaluate(() => {
+      const panel = document.getElementById('cog-panel');
+      return { visible: panel && !panel.hidden, hasSummary: !!(panel && panel.querySelector('.summary')),
+        hasAction: !!(panel && panel.querySelector('#cog-action')) };
+    });
+    if (st.visible && st.hasSummary) { reached = true; break; }
+    if (st.visible && st.hasAction && !st.hasSummary) { await page.click('#cog-action').catch(() => {}); await sleep(120); }
+    await sleep(100);
+  }
+  // 요약 행: 블록마다 [적중률, 오경보율] 두 줄이 순서대로. 짝수번째=적중, 홀수번째=오경보.
+  // 값은 <b> 첫 텍스트노드(예 "80 %"/"—")만 — 뒤 (N문항) count 숫자를 잡지 않도록.
+  const info = reached ? await page.evaluate(() => {
+    const panel = document.getElementById('cog-panel');
+    const rows = [...panel.querySelectorAll('.summary .row')].map((r) => {
+      const b = r.querySelector('b');
+      const txt = b && b.firstChild ? b.firstChild.textContent : (b ? b.textContent : '');
+      const m = txt.match(/-?\d+/);
+      return txt.includes('—') ? null : (m ? parseInt(m[0], 10) : null);
+    });
+    const hits = rows.filter((_, i) => i % 2 === 0);
+    const fas = rows.filter((_, i) => i % 2 === 1);
+    return {
+      hits, fas,
+      nBlocks: hits.length,
+      chart: !!panel.querySelector('.nb-chart svg'),
+      refs: !!panel.querySelector('.nb-refs'),
+      topNotes: panel.querySelectorAll('.top-note').length,
+      hasNaN: /NaN/.test(panel.innerHTML),
+    };
+  }) : { hits: [], fas: [], nBlocks: 0, chart: false, refs: false, topNotes: 0, hasNaN: true };
+  // 분모 0/빈 배열 가드: 순수 함수 nbackStats(QA에서 window 노출)가 예외 없이 null(→'—')을 내는지.
+  const guard = reached ? await page.evaluate(() => {
+    try {
+      const f = window.__nbackStats;
+      if (typeof f !== 'function') return { ok: false, why: 'no hook' };
+      const empty = f([]);
+      const zeroT = f([{ n: 1, isTarget: false, pressed: false }, { n: 1, isTarget: false, pressed: true }]); // 표적 0개
+      const zeroNT = f([{ n: 2, isTarget: true, pressed: true }]);                                            // 비표적 0개
+      return {
+        ok: Array.isArray(empty) && empty.length === 0
+          && zeroT[0].hitRate === null && zeroT[0].faRate !== null
+          && zeroNT[0].faRate === null && zeroNT[0].hitRate !== null,
+      };
+    } catch (e) { return { ok: false, why: String(e) }; }
+  }) : { ok: false, why: '결과 미도달' };
+  await page.close();
+  return { errors, reached, ...info, guard };
+}
+
+async function checkNback(browser, app) {
+  const checks = [];
+  const add = (name, pass, detail) => checks.push({ name, pass, detail });
+  const allEq = (a, v) => a.length > 0 && a.every((x) => x === v);
+  const blocks = app.id.includes('adults') ? 3 : 2; // 성인 n=1,2,3 / 청소년 n=1,2
+
+  // correct: 두 숫자가 갈라진다 — 적중 전부 100%·오경보 전부 0%. 블록 수·차트·참고문헌·경고 3개.
+  const c = await playNback(browser, urlFor(app.dir, 'ko'), app.id, 'correct');
+  add('정답봇 결과 도달', c.reached, c.reached ? 'ok' : `${RUN_TIMEOUT}ms 내 요약 없음`);
+  add('정답봇 JS 에러 없음', c.errors.length === 0, c.errors.length ? c.errors.slice(0, 3).join(' / ') : 'none');
+  add(`정답봇: 블록 ${blocks}개·적중 100%·오경보 0%(두 숫자 갈라짐)·차트·참고문헌`,
+    c.reached && c.nBlocks === blocks && allEq(c.hits, 100) && allEq(c.fas, 0) && c.chart && c.refs && c.topNotes >= 3 && !c.hasNaN,
+    `블록=${c.nBlocks}·적중=[${c.hits}]·오경보=[${c.fas}]·차트=${c.chart}·참고=${c.refs}·경고=${c.topNotes}`);
+  add('분모 0/빈 배열 가드(흰 화면 없음)', c.guard.ok, c.guard.ok ? 'null→"—"' : ('실패: ' + (c.guard.why || '')));
+
+  // anytime: 적중도 오경보도 함께 높다 — 오경보가 0에 묻히지 않아야 UI가 대조군을 잡아낸 것.
+  const a = await playNback(browser, urlFor(app.dir, 'ko'), app.id, 'anytime');
+  const faElevated = a.fas.filter((x) => x != null && x >= 20).length; // 오경보가 실제로 올라온 블록 수
+  add('아무때나봇: 오경보율이 0에 안 묻힘(두 숫자 안 갈라짐)',
+    a.reached && a.errors.length === 0 && !a.hasNaN && faElevated >= 1 && a.hits.some((x) => x != null && x > 0),
+    `적중=[${a.hits}]·오경보=[${a.fas}]·오경보≥20인 블록=${faElevated}`);
+
+  // always: 적중 100%·오경보 100% — 오경보가 100으로 '크게' 뜨는가(묻히면 UI 실패).
+  const al = await playNback(browser, urlFor(app.dir, 'ko'), app.id, 'always');
+  add('항상봇: 적중 100%·오경보 100%(오경보 100으로 표시)',
+    al.reached && al.errors.length === 0 && !al.hasNaN && allEq(al.hits, 100) && allEq(al.fas, 100),
+    `적중=[${al.hits}]·오경보=[${al.fas}]`);
+
+  // never: 적중 0%·오경보 0% — 흰 화면 없이 양쪽 0으로 뜨는가.
+  const nv = await playNback(browser, urlFor(app.dir, 'ko'), app.id, 'never');
+  add('절대안누름봇: 적중 0%·오경보 0%(흰 화면 없음)',
+    nv.reached && nv.errors.length === 0 && !nv.hasNaN && allEq(nv.hits, 0) && allEq(nv.fas, 0),
+    `도달=${nv.reached}·적중=[${nv.hits}]·오경보=[${nv.fas}]`);
+
+  return { id: app.id, checks };
+}
+
 // ── 실행 ─────────────────────────────────────────────────────────────
 if (SELECTED.length === 0) {
   console.error(`일치하는 앱이 없습니다: "${ARGS.join(' ')}". 예: digitspan / stroop gonogo / corsi-youth`);
@@ -780,6 +921,7 @@ const checkOne = (browser, app) =>
         : app.kind === 'simon' ? checkSimon(browser, app)
           : app.kind === 'stopsignal' ? checkStopSignal(browser, app)
           : app.kind === 'rotation' ? checkRotation(browser, app)
+          : app.kind === 'nback' ? checkNback(browser, app)
             : checkApp(browser, app);
 
 const server = await startServer();

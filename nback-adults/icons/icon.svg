@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="96" fill="#fafafa"/>
+  <text x="128" y="256" font-family="system-ui, Arial, sans-serif" font-size="150" font-weight="800" fill="#b9c7bf" text-anchor="middle" dominant-baseline="central">K</text>
+  <text x="256" y="256" font-family="system-ui, Arial, sans-serif" font-size="150" font-weight="800" fill="#b9c7bf" text-anchor="middle" dominant-baseline="central">H</text>
+  <text x="384" y="256" font-family="system-ui, Arial, sans-serif" font-size="150" font-weight="800" fill="#1D6F4F" text-anchor="middle" dominant-baseline="central">K</text>
+</svg>
