@@ -54,6 +54,8 @@ const APPS = [
   { id: 'nback-adults', dir: 'nback-adults', kind: 'nback' },
   { id: 'jnd-youth',  dir: 'jnd-youth',  kind: 'jnd' },
   { id: 'jnd-adults', dir: 'jnd-adults', kind: 'jnd' },
+  { id: 'vsearch-youth',  dir: 'vsearch-youth',  kind: 'vsearch' },
+  { id: 'vsearch-adults', dir: 'vsearch-adults', kind: 'vsearch' },
 ];
 
 // 범위 지정: `node check.mjs`(전체) / `node check.mjs digitspan`(접두사 일치) / `node check.mjs stroop gonogo`.
@@ -659,6 +661,101 @@ async function checkStopSignal(browser, app) {
   return { id: app.id, checks };
 }
 
+// ── 시각 탐색(Visual Search) 점검 ──────────────────────────────────────
+// 봇은 `.vs-item[data-target="1"]`(빨간 원)이 있는지 '보고'(사람이 보는 것과 동일) 있음/없음 응답.
+//   correct : 정확히 응답. 특징=일정 지연(항목수 무관→기울기 평탄) / 결합=항목수 비례 지연(직렬→양의 기울기).
+//   wrong   : 늘 반대 → 정확도 0 → '있음·정답' 시행 없어 두 기울기 게이트 "—".
+//   anytime : 무작위 → 우연(50%) 정확도 → 우연 수준 칸 경고, 흰 화면 없음.
+function installVSearchBot(strategy) {
+  window.__seen = new Set();
+  window.__vsTimer = setInterval(() => {
+    const panel = document.getElementById('cog-panel');
+    if (panel && !panel.hidden && panel.querySelector('.summary')) return;
+    const arena = document.querySelector('.vs-arena');
+    const btns = [...document.querySelectorAll('.vs-btn')];
+    if (!arena || btns.length < 2 || btns.some((b) => b.disabled)) return; // 응답 활성일 때만
+    const key = arena.dataset.seq || '';
+    if (!key || window.__seen.has(key)) return;
+    window.__seen.add(key);
+    const hasTarget = !!arena.querySelector('.vs-item[data-target="1"]');
+    const type = arena.dataset.type;
+    const ss = parseInt(arena.dataset.setsize, 10) || 4;
+    let resp, delay = 300;
+    if (strategy === 'correct') { resp = hasTarget ? 'present' : 'absent'; delay = type === 'conjunction' ? 250 + ss * 18 : 300; }
+    else if (strategy === 'wrong') { resp = hasTarget ? 'absent' : 'present'; }
+    else { resp = Math.random() < 0.5 ? 'present' : 'absent'; }
+    setTimeout(() => {
+      const b = [...document.querySelectorAll('.vs-btn')].find((x) => x.dataset.resp === resp);
+      if (b && !b.disabled) b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' }));
+    }, delay);
+  }, 20);
+}
+
+async function playVSearch(browser, url, id, strategy) {
+  const page = await browser.newPage();
+  await page.setViewport({ width: 390, height: 880, deviceScaleFactor: 2 });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+  page.on('console', (m) => { if (m.type() === 'error') errors.push('console.error: ' + m.text()); });
+  await page.goto(url, { waitUntil: 'load' });
+  await page.evaluate((i) => { try { localStorage.removeItem('cog:' + i + ':sessions'); } catch {} }, id);
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('#cog-action', { timeout: 15000 });
+  await page.evaluate(installVSearchBot, strategy);
+  const t0 = Date.now();
+  let reached = false;
+  while (Date.now() - t0 < RUN_TIMEOUT) {
+    const st = await page.evaluate(() => {
+      const panel = document.getElementById('cog-panel');
+      return { visible: panel && !panel.hidden, hasSummary: !!(panel && panel.querySelector('.summary')),
+        hasAction: !!(panel && panel.querySelector('#cog-action')) };
+    });
+    if (st.visible && st.hasSummary) { reached = true; break; }
+    if (st.visible && st.hasAction && !st.hasSummary) { await page.click('#cog-action').catch(() => {}); await sleep(120); }
+    await sleep(100);
+  }
+  const info = reached ? await page.evaluate(() => {
+    const panel = document.getElementById('cog-panel');
+    const last = window.__vsLast || {};
+    return {
+      overall: last.overall == null ? null : last.overall,
+      slopes: last.slopes || {},
+      nearChance: last.nearChance == null ? null : last.nearChance,
+      charts: panel.querySelectorAll('.vs-chart svg').length,
+      grid: !!panel.querySelector('.vs-grid'),
+    };
+  }) : { overall: null, slopes: {}, nearChance: null, charts: 0, grid: false };
+  await page.close();
+  return { errors, reached, ...info };
+}
+
+async function checkVSearch(browser, app) {
+  const checks = [];
+  const add = (name, pass, detail) => checks.push({ name, pass, detail });
+
+  const c = await playVSearch(browser, urlFor(app.dir, 'ko'), app.id, 'correct');
+  add('정답봇 결과 도달', c.reached, c.reached ? 'ok' : `${RUN_TIMEOUT}ms 내 요약 없음`);
+  add('정답봇 JS 에러 없음', c.errors.length === 0, c.errors.length ? c.errors.slice(0, 3).join(' / ') : 'none');
+  const feat = c.slopes.feature, conj = c.slopes.conjunction;
+  add('정답봇: 결합 기울기>0(직렬)·특징은 평탄(작거나 게이트)·정확도 높음·차트2·정답률표',
+    c.reached && c.overall != null && c.overall >= 90 && conj != null && conj > 8 && (feat == null || feat < conj) && c.charts >= 2 && c.grid,
+    `정확도=${c.overall}%·특징기울기=${feat}·결합기울기=${conj}·차트=${c.charts}·표=${c.grid}`);
+
+  const w = await playVSearch(browser, urlFor(app.dir, 'ko'), app.id, 'wrong');
+  add('오답봇: 정확도 낮음·있음정답 없어 두 기울기 "—"(게이트)',
+    w.reached && w.errors.length === 0 && w.overall != null && w.overall < 50 && w.slopes.feature == null && w.slopes.conjunction == null,
+    `도달=${w.reached}·에러${w.errors.length}·정확도=${w.overall}%·특징=${w.slopes.feature}·결합=${w.slopes.conjunction}`);
+
+  const a = await playVSearch(browser, urlFor(app.dir, 'ko'), app.id, 'anytime');
+  // 16시행 무작위는 정확히 50%를 못 박으므로(노이즈), '완벽도 전무도 아님(0<정확도<100) + 우연칸 발생'으로
+  // 판정 — 이게 아무때나봇을 정답봇(100·우연칸0)·오답봇(0)과 구분하는 견고한 불변식.
+  add('아무때나봇: 완벽도 전무도 아님(0<정확도<100)·우연칸 경고·흰 화면 없음',
+    a.reached && a.errors.length === 0 && a.overall != null && a.overall > 0 && a.overall < 100 && a.nearChance != null && a.nearChance > 0,
+    `도달=${a.reached}·에러${a.errors.length}·정확도=${a.overall}%·우연칸=${a.nearChance}`);
+
+  return { id: app.id, checks };
+}
+
 // ── 변별 역치(JND) 점검 ────────────────────────────────────────────────
 // 봇은 두 원의 '보이는 크기'(getBoundingClientRect)를 읽어 큰 쪽을 안다(정답 노출 아님, 사람이 보는 것과 동일).
 //   correct : 항상 큰 쪽 → 반전 없이 차이가 계속 좁아져 MIN(2%) 클램프, JND '—'(0반전 게이트).
@@ -1018,6 +1115,7 @@ const checkOne = (browser, app) =>
           : app.kind === 'rotation' ? checkRotation(browser, app)
           : app.kind === 'nback' ? checkNback(browser, app)
           : app.kind === 'jnd' ? checkJnd(browser, app)
+          : app.kind === 'vsearch' ? checkVSearch(browser, app)
             : checkApp(browser, app);
 
 const server = await startServer();

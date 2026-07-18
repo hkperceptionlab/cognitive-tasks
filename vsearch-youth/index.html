@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>찾아지는 순간 (청소년)</title>
+  <meta name="theme-color" content="#0E7C86" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icons/icon.svg" />
+  <link rel="apple-touch-icon" href="./icons/icon.svg" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+</head>
+<body>
+  <div id="app"></div>
+
+  <script type="module">
+    import { startVSearch } from '../vsearch-common/vsearch.js';
+
+    // 청소년: 칸당 2회 → 조건2×항목수4×있음없음2×2 = 32시행, 기본 크기
+    startVSearch({
+      id: 'vsearch-youth',
+      reps: 2,
+      scale: 1,
+    });
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    }
+  </script>
+</body>
+</html>
