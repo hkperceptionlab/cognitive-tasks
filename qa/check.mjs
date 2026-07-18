@@ -52,6 +52,8 @@ const APPS = [
   { id: 'rotation-adults', dir: 'rotation-adults', kind: 'rotation' },
   { id: 'nback-youth',  dir: 'nback-youth',  kind: 'nback' },
   { id: 'nback-adults', dir: 'nback-adults', kind: 'nback' },
+  { id: 'jnd-youth',  dir: 'jnd-youth',  kind: 'jnd' },
+  { id: 'jnd-adults', dir: 'jnd-adults', kind: 'jnd' },
 ];
 
 // 범위 지정: `node check.mjs`(전체) / `node check.mjs digitspan`(접두사 일치) / `node check.mjs stroop gonogo`.
@@ -657,6 +659,99 @@ async function checkStopSignal(browser, app) {
   return { id: app.id, checks };
 }
 
+// ── 변별 역치(JND) 점검 ────────────────────────────────────────────────
+// 봇은 두 원의 '보이는 크기'(getBoundingClientRect)를 읽어 큰 쪽을 안다(정답 노출 아님, 사람이 보는 것과 동일).
+//   correct : 항상 큰 쪽 → 반전 없이 차이가 계속 좁아져 MIN(2%) 클램프, JND '—'(0반전 게이트).
+//   wrong   : 항상 작은 쪽 → 차이가 계속 넓어져 MAX(60%) 클램프, JND '—'.
+//   anytime : 무작위 → 반전이 생기면 JND 숫자(0회면 '—'), 게이트 일관·흰 화면 없음.
+function installJndBot(strategy) {
+  window.__seen = new Set();
+  window.__jndTimer = setInterval(() => {
+    const panel = document.getElementById('cog-panel');
+    if (panel && !panel.hidden && panel.querySelector('.summary')) return;
+    const arena = document.querySelector('.jnd-arena');
+    const dots = [...document.querySelectorAll('.jnd-dot')];
+    if (!arena || dots.length < 2 || dots.some((d) => d.disabled)) return; // 응답 활성일 때만
+    const key = arena.dataset.seq || '';                                   // 시행 시퀀스로 구분(연습 포함)
+    if (!key || window.__seen.has(key)) return;
+    window.__seen.add(key);
+    setTimeout(() => {
+      const ds = [...document.querySelectorAll('.jnd-dot')];
+      if (ds.length < 2 || ds.some((d) => d.disabled)) return;
+      const w = ds.map((d) => d.getBoundingClientRect().width);
+      const bigIdx = w[0] >= w[1] ? 0 : 1, smallIdx = 1 - bigIdx;
+      let idx;
+      if (strategy === 'correct') idx = bigIdx;
+      else if (strategy === 'wrong') idx = smallIdx;
+      else idx = Math.random() < 0.5 ? 0 : 1;
+      ds[idx].dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' }));
+    }, 250);
+  }, 20);
+}
+
+async function playJnd(browser, url, id, strategy) {
+  const page = await browser.newPage();
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+  page.on('console', (m) => { if (m.type() === 'error') errors.push('console.error: ' + m.text()); });
+  await page.goto(url, { waitUntil: 'load' });
+  await page.evaluate((i) => { try { localStorage.removeItem('cog:' + i + ':sessions'); } catch {} }, id);
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('#cog-action', { timeout: 15000 });
+  await page.evaluate(installJndBot, strategy);
+  const t0 = Date.now();
+  let reached = false;
+  while (Date.now() - t0 < RUN_TIMEOUT) {
+    const st = await page.evaluate(() => {
+      const panel = document.getElementById('cog-panel');
+      return { visible: panel && !panel.hidden, hasSummary: !!(panel && panel.querySelector('.summary')),
+        hasAction: !!(panel && panel.querySelector('#cog-action')) };
+    });
+    if (st.visible && st.hasSummary) { reached = true; break; }
+    if (st.visible && st.hasAction && !st.hasSummary) { await page.click('#cog-action').catch(() => {}); await sleep(120); }
+    await sleep(100);
+  }
+  const info = reached ? await page.evaluate(() => {
+    const panel = document.getElementById('cog-panel');
+    const row0 = panel.querySelector('.summary .row b');
+    const jndText = row0 ? (row0.firstChild ? row0.firstChild.textContent : row0.textContent).trim() : '';
+    const last = window.__jndLast || {};
+    return { jndText, spark: !!panel.querySelector('.jnd-spark svg'),
+      reversals: last.reversals == null ? null : last.reversals,
+      finalDiff: last.finalDiff == null ? null : last.finalDiff,
+      jndNum: last.jnd == null ? null : last.jnd };
+  }) : { jndText: '', spark: false, reversals: null, finalDiff: null, jndNum: null };
+  await page.close();
+  return { errors, reached, ...info };
+}
+
+async function checkJnd(browser, app) {
+  const checks = [];
+  const add = (name, pass, detail) => checks.push({ name, pass, detail });
+
+  const c = await playJnd(browser, urlFor(app.dir, 'ko'), app.id, 'correct');
+  add('정답봇 결과 도달', c.reached, c.reached ? 'ok' : `${RUN_TIMEOUT}ms 내 요약 없음`);
+  add('정답봇 JS 에러 없음', c.errors.length === 0, c.errors.length ? c.errors.slice(0, 3).join(' / ') : 'none');
+  add('정답봇: 반전0→차이 좁아져 MIN(2%) 클램프·JND "—"·스파크',
+    c.reached && c.reversals === 0 && c.finalDiff != null && c.finalDiff <= 2.01 && c.jndText === '—' && c.spark,
+    `반전=${c.reversals}·최종차이=${c.finalDiff}%·JND=${c.jndText}·spark=${c.spark}`);
+
+  const w = await playJnd(browser, urlFor(app.dir, 'ko'), app.id, 'wrong');
+  add('오답봇: 반전0→차이 넓어져 MAX(60%) 클램프·JND "—"',
+    w.reached && w.errors.length === 0 && w.reversals === 0 && w.finalDiff != null && w.finalDiff >= 59.99 && w.jndText === '—',
+    `도달=${w.reached}·에러${w.errors.length}·반전=${w.reversals}·최종차이=${w.finalDiff}%·JND=${w.jndText}`);
+
+  const a = await playJnd(browser, urlFor(app.dir, 'ko'), app.id, 'anytime');
+  const gateOk = a.reversals != null &&
+    ((a.reversals > 0 && a.jndText !== '—' && a.jndNum != null) || (a.reversals === 0 && a.jndText === '—'));
+  add('아무때나봇: 반전>0이면 JND 숫자·0이면 "—"(게이트 일관)·흰 화면 없음',
+    a.reached && a.errors.length === 0 && gateOk && a.spark,
+    `도달=${a.reached}·에러${a.errors.length}·반전=${a.reversals}·JND=${a.jndText}·spark=${a.spark}`);
+
+  return { id: app.id, checks };
+}
+
 // ── 도형 회전(Mental Rotation) 점검 ────────────────────────────────────
 // 봇은 자극 글자의 transform 행렬식 부호로 거울상 여부를 '본다'(정답 노출 아님, 변환에서 읽음).
 //   correct    : 판별해 정확히 누름. 각도 무관 일정 지연 → 기울기≈0 (봇은 안 돌리니 이 과제의 대조군).
@@ -922,6 +1017,7 @@ const checkOne = (browser, app) =>
           : app.kind === 'stopsignal' ? checkStopSignal(browser, app)
           : app.kind === 'rotation' ? checkRotation(browser, app)
           : app.kind === 'nback' ? checkNback(browser, app)
+          : app.kind === 'jnd' ? checkJnd(browser, app)
             : checkApp(browser, app);
 
 const server = await startServer();

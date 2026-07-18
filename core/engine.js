@@ -55,6 +55,7 @@ const FAMILY_COLORS = {
   memory: '#1D6F4F',     // 코시, 숫자 거꾸로 (진한 초록)
   speed: '#6B2D5C',      // 단순 반응속도 (진한 자주)
   spatial: '#A04A15',    // 도형 회전 등 공간 변형 (번트 오렌지, 대비 6.0:1)
+  perception: '#0E7C86', // 변별 역치 등 지각 (청록, 흰 배경 대비 4.95:1)
 };
 const DEFAULT_ACCENT = FAMILY_COLORS.inhibition;
 

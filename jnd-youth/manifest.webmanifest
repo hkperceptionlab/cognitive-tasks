@@ -1,0 +1,20 @@
+{
+  "name": "차이가 보이는 순간 (청소년)",
+  "short_name": "변별역치 청소년",
+  "description": "두 원 중 더 큰 쪽을 골라 크기 차이를 겨우 느끼는 지점(변별 역치)을 찾는 지각 과제. 결과는 기기를 떠나지 않습니다.",
+  "lang": "ko",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fafafa",
+  "theme_color": "#0E7C86",
+  "icons": [
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

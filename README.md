@@ -1,9 +1,10 @@
 # Cognitive Tasks — H.K. Perception Lab
 
-A collection of web-based cognitive tasks — currently Stroop, Go/No-go, Corsi
-block-tapping, Digit Span Backward, Simple Reaction Time, the Simon task, a
-Stop-signal (stopping) task, Mental Rotation, and N-back — each with separate
-versions for youth and adults and support for four languages.
+A collection of web-based cognitive and perception tasks — currently Stroop,
+Go/No-go, Corsi block-tapping, Digit Span Backward, Simple Reaction Time, the
+Simon task, a Stop-signal (stopping) task, Mental Rotation, N-back, and a
+size discrimination-threshold (JND) task — each with separate versions for
+youth and adults and support for four languages.
 
 This is a **demonstration** tool, not a training program. It makes no promise of
 improving cognitive ability — the point is simply to let people experience how
@@ -33,3 +34,5 @@ Built by a high school student, with coding help from an AI tool (Claude Code).
 - [Mental Rotation — Adults](./rotation-adults/)
 - [N-back — Youth](./nback-youth/)
 - [N-back — Adults](./nback-adults/)
+- [Discrimination threshold (JND) — Youth](./jnd-youth/)
+- [Discrimination threshold (JND) — Adults](./jnd-adults/)
