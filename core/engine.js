@@ -54,6 +54,7 @@ const FAMILY_COLORS = {
   inhibition: '#3949ab', // 스트룹, Go/No-go (파랑, 기본값)
   memory: '#1D6F4F',     // 코시, 숫자 거꾸로 (진한 초록)
   speed: '#6B2D5C',      // 단순 반응속도 (진한 자주)
+  spatial: '#A04A15',    // 도형 회전 등 공간 변형 (번트 오렌지, 대비 6.0:1)
 };
 const DEFAULT_ACCENT = FAMILY_COLORS.inhibition;
 
