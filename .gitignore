@@ -15,3 +15,11 @@ build/
 Thumbs.db
 .vscode/
 .idea/
+
+# QA 검증 산출물 — 스크린샷/렌더링 무더기는 로컬에 물증으로 보관하되 git엔 절대 안 올린다.
+#   (nbshots*/ = N-back 배너 렌더 증거 152장, 앞으로 지각 과제 등 다른 *shots 폴더도 자동으로 걸리게.)
+qa/nbshots*/
+qa/*shots*/
+qa/**/*.png
+# QA 임시 스크립트(_shot_tmp.mjs·_verify_tmp.mjs 등 일회용) — 실수로 커밋되지 않게.
+qa/_*_tmp.*
