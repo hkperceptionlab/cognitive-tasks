@@ -1,0 +1,20 @@
+{
+  "name": "머릿속에서 돌리기 (성인)",
+  "short_name": "돌리기 성인",
+  "description": "기울어진 글자가 정상인지 거울상인지 머릿속에서 돌려 판단하는 심적 회전 과제. 결과는 기기를 떠나지 않습니다.",
+  "lang": "ko",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fafafa",
+  "theme_color": "#A04A15",
+  "icons": [
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

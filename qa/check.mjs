@@ -48,6 +48,8 @@ const APPS = [
   { id: 'simon-adults', dir: 'simon-adults', kind: 'simon' },
   { id: 'stopsignal-youth',  dir: 'stopsignal-youth',  kind: 'stopsignal' },
   { id: 'stopsignal-adults', dir: 'stopsignal-adults', kind: 'stopsignal' },
+  { id: 'rotation-youth',  dir: 'rotation-youth',  kind: 'rotation' },
+  { id: 'rotation-adults', dir: 'rotation-adults', kind: 'rotation' },
 ];
 
 // 범위 지정: `node check.mjs`(전체) / `node check.mjs digitspan`(접두사 일치) / `node check.mjs stroop gonogo`.
@@ -653,6 +655,118 @@ async function checkStopSignal(browser, app) {
   return { id: app.id, checks };
 }
 
+// ── 도형 회전(Mental Rotation) 점검 ────────────────────────────────────
+// 봇은 자극 글자의 transform 행렬식 부호로 거울상 여부를 '본다'(정답 노출 아님, 변환에서 읽음).
+//   correct    : 판별해 정확히 누름. 각도 무관 일정 지연 → 기울기≈0 (봇은 안 돌리니 이 과제의 대조군).
+//   normalOnly : 늘 '정상' → 정상 정답·거울상 오답 = 정확도 50% → 저정확도 경고.
+//   wrong      : 판별을 뒤집어 항상 오답 → 각도별 유효 0개 → 회귀 불가('—'), 흰 화면 방지 확인.
+function installRotationBot(strategy) {
+  window.__seen = new Set();
+  window.__rotTimer = setInterval(() => {
+    const pad = document.getElementById('cog-pad');
+    const stim = document.getElementById('cog-stimulus');
+    const prog = document.getElementById('cog-progress');
+    if (!pad || !stim || pad.hidden || !pad.classList.contains('live')) return;
+    const g = stim.querySelector('.rot-glyph');
+    if (!g) return;
+    const key = prog ? prog.textContent : '';
+    if (window.__seen.has(key)) return;
+    window.__seen.add(key);
+    // 자극 변환에서 거울상 여부(행렬식 부호)와 직립기준 각도(회전각의 절댓값)를 읽는다.
+    const m = new DOMMatrix(getComputedStyle(g).transform);
+    const mirrored = (m.a * m.d - m.b * m.c) < 0;
+    const angle = Math.round(Math.abs(Math.atan2(-m.c, m.d) * 180 / Math.PI));
+    const snap = [0, 60, 120, 180].reduce((b, a) => (Math.abs(a - angle) < Math.abs(b - angle) ? a : b), 0);
+    let id, delay = 350;
+    if (strategy === 'correct') id = mirrored ? 'mirror' : 'normal';
+    else if (strategy === 'normalOnly') id = 'normal';
+    else if (strategy === 'wrong') id = mirrored ? 'normal' : 'mirror';       // 뒤집어 항상 오답
+    else if (strategy === 'rotator') { id = mirrored ? 'mirror' : 'normal'; delay = 250 + snap * 2; }   // 각도에 비례 → 깨끗한 직선(R² 높음)
+    else { id = mirrored ? 'mirror' : 'normal'; delay = { 0: 300, 60: 420, 120: 330, 180: 400 }[snap]; } // shaped: 양의 기울기지만 비직선(R² 낮음)
+    setTimeout(() => {
+      const p = document.getElementById('cog-pad');
+      if (!p || !p.classList.contains('live')) return;
+      const btn = p.querySelector('.choice[data-choice="' + id + '"]');
+      if (btn) btn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' }));
+    }, delay);
+  }, 20);
+}
+
+async function playRotation(browser, url, id, strategy) {
+  const page = await browser.newPage();
+  await page.setViewport({ width: 390, height: 900, deviceScaleFactor: 2 });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+  page.on('console', (m) => { if (m.type() === 'error') errors.push('console.error: ' + m.text()); });
+  await page.goto(url, { waitUntil: 'load' });
+  await page.evaluate((i) => { try { localStorage.removeItem('cog:' + i + ':sessions'); } catch {} }, id);
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('#cog-action', { timeout: 15000 });
+  await page.evaluate(installRotationBot, strategy);
+  const t0 = Date.now();
+  let reached = false;
+  while (Date.now() - t0 < RUN_TIMEOUT) {
+    const st = await page.evaluate(() => {
+      const panel = document.getElementById('cog-panel');
+      return { visible: panel && !panel.hidden, hasSummary: !!(panel && panel.querySelector('.summary')),
+        hasAction: !!(panel && panel.querySelector('#cog-action')) };
+    });
+    if (st.visible && st.hasSummary) { reached = true; break; }
+    if (st.visible && st.hasAction && !st.hasSummary) { await page.click('#cog-action').catch(() => {}); await sleep(120); }
+    await sleep(100);
+  }
+  // 요약 순서: [0..3]=각도별(정확도+RT), [4]=전체 정확도, [5]=기울기, [6]=R², [7]=회전속도
+  const info = reached ? await page.evaluate(() => {
+    const panel = document.getElementById('cog-panel');
+    const txt = (i) => { const b = panel.querySelectorAll('.summary .row b')[i]; return b && b.firstChild ? b.firstChild.textContent.trim() : (b ? b.textContent.trim() : ''); };
+    const num = (s) => { const m = s.match(/-?\d+(\.\d+)?/); return m ? parseFloat(m[0]) : null; };
+    const g = (i) => (txt(i).includes('—') ? null : num(txt(i)));
+    return { acc: num(txt(4)), slope: g(5), r2: g(6), rotSpeed: g(7), chart: !!panel.querySelector('.rot-chart svg'), notes: panel.querySelectorAll('.top-note').length };
+  }) : { acc: null, slope: null, r2: null, rotSpeed: null, chart: false, notes: 0 };
+  // 추세 그래프에 찍히는 값(series 'slope')을 저장 세션에서 읽는다. R²<컷이면 null(=그래프 미표시).
+  const trendSlope = reached ? await page.evaluate((i) => {
+    try { const s = JSON.parse(localStorage.getItem('cog:' + i + ':sessions') || '[]').slice(-1)[0]; return s && s.values ? (s.values.slope === null ? null : s.values.slope) : undefined; } catch { return undefined; }
+  }, id) : undefined;
+  await page.close();
+  return { errors, reached, trendSlope, ...info };
+}
+
+async function checkRotation(browser, app) {
+  const checks = [];
+  const add = (name, pass, detail) => checks.push({ name, pass, detail });
+
+  const c = await playRotation(browser, urlFor(app.dir, 'ko'), app.id, 'correct');
+  add('정답봇 결과 도달', c.reached, c.reached ? 'ok' : `${RUN_TIMEOUT}ms 내 요약 없음`);
+  add('정답봇 JS 에러 없음', c.errors.length === 0, c.errors.length ? c.errors.slice(0, 3).join(' / ') : 'none');
+  add('정답봇 정확도 100%·기울기≈0(대조군)·그래프',
+    c.reached && c.acc === 100 && c.slope != null && Math.abs(c.slope) < 2 && c.chart,
+    `acc=${c.acc}%·기울기=${c.slope}ms/도·그래프=${c.chart}`);
+
+  // R² 게이트(요약+그래프): 비직선(양의 기울기, R² 낮음) → 회전속도 '—' AND 추세점도 안 찍힘(null).
+  const s = await playRotation(browser, urlFor(app.dir, 'ko'), app.id, 'shaped');
+  add('R² 게이트: 비직선→회전속도 "—"·추세점도 없음(기울기·R²는 남음)',
+    s.reached && s.errors.length === 0 && s.slope != null && s.slope > 0 && s.r2 != null && s.r2 < 0.5 && s.rotSpeed === null && s.trendSlope === null,
+    `기울기=${s.slope}·R²=${s.r2}·회전속도=${s.rotSpeed}·추세점=${s.trendSlope}`);
+
+  // 반대(구멍 아님 확인): 깨끗한 직선(R² 높음) → 회전속도 표시 AND 추세에 기울기 찍힘.
+  const r = await playRotation(browser, urlFor(app.dir, 'ko'), app.id, 'rotator');
+  add('고 R²: 회전속도 표시·추세점 찍힘',
+    r.reached && r.errors.length === 0 && r.r2 != null && r.r2 >= 0.5 && r.rotSpeed != null && r.trendSlope != null,
+    `R²=${r.r2}·회전속도=${r.rotSpeed}·추세점=${r.trendSlope}`);
+
+  const n = await playRotation(browser, urlFor(app.dir, 'ko'), app.id, 'normalOnly');
+  add('저정확도봇: 정확도<90%·경고 뜸',
+    n.reached && n.errors.length === 0 && n.acc != null && n.acc < 90 && n.notes >= 3,
+    `acc=${n.acc}%·경고배너=${n.notes}`);
+
+  const w = await playRotation(browser, urlFor(app.dir, 'ko'), app.id, 'wrong');
+  add('오답봇(각도 유효 0): 기울기 "—"·행 없음',
+    w.reached && w.errors.length === 0 && w.acc === 0 && w.slope === null,
+    `도달=${w.reached}·acc=${w.acc}%·기울기=${w.slope}`);
+
+  return { id: app.id, checks };
+}
+
 // ── 실행 ─────────────────────────────────────────────────────────────
 if (SELECTED.length === 0) {
   console.error(`일치하는 앱이 없습니다: "${ARGS.join(' ')}". 예: digitspan / stroop gonogo / corsi-youth`);
@@ -665,6 +779,7 @@ const checkOne = (browser, app) =>
       : app.kind === 'srt' ? checkSRT(browser, app)
         : app.kind === 'simon' ? checkSimon(browser, app)
           : app.kind === 'stopsignal' ? checkStopSignal(browser, app)
+          : app.kind === 'rotation' ? checkRotation(browser, app)
             : checkApp(browser, app);
 
 const server = await startServer();
