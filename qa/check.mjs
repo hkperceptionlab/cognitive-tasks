@@ -66,6 +66,8 @@ const APPS = [
   { id: 'inattentional-blindness', dir: 'inattentional-blindness', kind: 'ib' },
   { id: 'emo-stroop-youth',  dir: 'emo-stroop-youth',  kind: 'emo-stroop' },
   { id: 'emo-stroop-adults', dir: 'emo-stroop-adults', kind: 'emo-stroop' },
+  { id: 'emo-dotprobe-youth',  dir: 'emo-dotprobe-youth',  kind: 'emo-dotprobe' },
+  { id: 'emo-dotprobe-adults', dir: 'emo-dotprobe-adults', kind: 'emo-dotprobe' },
 ];
 
 // 범위 지정: `node check.mjs`(전체) / `node check.mjs digitspan`(접두사 일치) / `node check.mjs stroop gonogo`.
@@ -844,6 +846,89 @@ async function checkEmoStroop(browser, app) {
   return { id: app.id, checks };
 }
 
+// ── 정서 점탐사(emo-dotprobe) 점검 — 프로브가 나온 쪽을 맞히는 위치 응답. 두 게이트 독립 확인 ──
+// 정답봇: 항상 프로브쪽(arena.dataset.probe) → 경고 안 뜸 + 편향 숫자. 오답봇: 셀당 첫 본시행 1개만
+// 반대쪽 → 정확도<90%(경고 O)이나 셀별 유효 ≥6 유지 → 편향도 숫자(정확도 게이트와 편향 게이트 독립).
+// 아무때나봇: 무작위 좌/우 → JS 에러 없이 끝까지. 판정값은 window.__dpLast(analyze QA 노출)로 직접 단언.
+function installEmoDotprobeBot(strategy) {
+  window.__seen = new Set();
+  window.__wrongDone = new Set();
+  window.__dpTimer = setInterval(() => {
+    const arena = document.querySelector('.dp-arena');
+    const btns = [...document.querySelectorAll('.dp-btn')];
+    if (!arena || !btns.length || btns.every((b) => b.disabled)) return; // 응답창 아닐 때(응시·단어·피드백)
+    const seq = arena.dataset.seq || '';
+    if (!seq || window.__seen.has(seq)) return;
+    window.__seen.add(seq);
+    const probe = arena.dataset.probe || '', cell = arena.dataset.cell || '', phase = arena.dataset.phase || '';
+    let wrongThis = false;
+    if (strategy === 'wrong' && phase === 'main' && cell && !window.__wrongDone.has(cell)) {
+      window.__wrongDone.add(cell); wrongThis = true; // 셀당 정확히 1오답 → 정확도<90%, 유효≥6 유지
+    }
+    setTimeout(() => {
+      const bs = [...document.querySelectorAll('.dp-btn')];
+      if (!bs.length || bs.every((b) => b.disabled)) return; // 이미 지나감(시간초과)
+      const otherSide = probe === 'left' ? 'right' : 'left';
+      let side = probe;
+      if (strategy === 'anytime') side = Math.random() < 0.5 ? 'left' : 'right';
+      else if (strategy === 'wrong' && wrongThis) side = otherSide;
+      const b = bs.find((x) => x.dataset.side === side);
+      if (b && !b.disabled) b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' }));
+    }, 350); // 페이지 컨텍스트라 RESPOND_MS 못 씀 — 350 하드코딩
+  }, 20);
+}
+
+async function playEmoDotprobe(browser, url, id, strategy) {
+  const page = await browser.newPage();
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+  page.on('console', (m) => { if (m.type() === 'error') errors.push('console.error: ' + m.text()); });
+  await page.goto(url, { waitUntil: 'load' });
+  await page.evaluate((i) => { try { localStorage.removeItem('cog:' + i + ':sessions'); } catch {} }, id);
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('#cog-action', { timeout: 15000 });
+  await page.evaluate(installEmoDotprobeBot, strategy);
+  const t0 = Date.now();
+  let reached = false;
+  while (Date.now() - t0 < RUN_TIMEOUT) {
+    const st = await page.evaluate(() => {
+      const panel = document.getElementById('cog-panel');
+      return { visible: panel && !panel.hidden, hasSummary: !!(panel && panel.querySelector('.summary')),
+        hasAction: !!(panel && panel.querySelector('#cog-action')) };
+    });
+    if (st.visible && st.hasSummary) { reached = true; break; }
+    if (st.visible && st.hasAction && !st.hasSummary) { await page.click('#cog-action').catch(() => {}); await sleep(120); }
+    await sleep(100);
+  }
+  const last = reached ? await page.evaluate(() => window.__dpLast || null) : null;
+  await page.close();
+  return { errors, reached, last };
+}
+
+async function checkEmoDotprobe(browser, app) {
+  const checks = [];
+  const add = (n, p, d) => checks.push({ name: n, pass: p, detail: d });
+
+  const c = await playEmoDotprobe(browser, urlFor(app.dir, 'ko'), app.id, 'correct');
+  add('정답봇 결과 도달', c.reached, c.reached ? 'ok' : `${RUN_TIMEOUT}ms 내 요약 없음`);
+  add('정답봇 JS 에러 없음', c.errors.length === 0, c.errors.length ? c.errors.slice(0, 3).join(' / ') : 'none');
+  add('정답봇: 정확도 경고 안 뜸 + 편향 숫자 표시',
+    !!c.last && c.last.lowAcc === false && c.last.negBias != null && c.last.posBias != null,
+    c.last ? `경고=${c.last.lowAcc}·부정편향=${c.last.negBias}·긍정편향=${c.last.posBias}·유효=${JSON.stringify(c.last.counts)}` : '값 없음');
+
+  const w = await playEmoDotprobe(browser, urlFor(app.dir, 'ko'), app.id, 'wrong');
+  add('오답봇 결과 도달·JS 에러 없음', w.reached && w.errors.length === 0, `도달=${w.reached}·에러${w.errors.length}`);
+  add('오답봇: 정확도<90% 경고 O · 편향 표시 O (두 게이트 독립)',
+    !!w.last && w.last.acc < 0.9 && w.last.lowAcc === true && w.last.negBias != null && w.last.posBias != null,
+    w.last ? `정확도=${Math.round(w.last.acc * 100)}%·경고=${w.last.lowAcc}·부정편향=${w.last.negBias}·긍정편향=${w.last.posBias}` : '값 없음');
+
+  const a = await playEmoDotprobe(browser, urlFor(app.dir, 'ko'), app.id, 'anytime');
+  add('아무때나봇: JS 에러 없이 결과 도달', a.reached && a.errors.length === 0, `도달=${a.reached}·에러${a.errors.length}`);
+
+  return { id: app.id, checks };
+}
+
 // ── 네커 큐브 데모(necker-cube) 점검 — 판정 없는 데모라 로드·요소·버튼 동작만(스모크) ──
 async function checkNeckerCube(browser, app) {
   const checks = [];
@@ -1563,6 +1648,7 @@ const checkOne = (browser, app) =>
           : app.kind === 'afterimage' ? checkAfterimage(browser, app)
           : app.kind === 'ib' ? checkIb(browser, app)
           : app.kind === 'emo-stroop' ? checkEmoStroop(browser, app)
+          : app.kind === 'emo-dotprobe' ? checkEmoDotprobe(browser, app)
             : checkApp(browser, app);
 
 const server = await startServer();

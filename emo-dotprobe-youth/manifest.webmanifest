@@ -1,0 +1,20 @@
+{
+  "name": "정서 점탐사 (청소년)",
+  "short_name": "정서점탐사 청소년",
+  "description": "좌우 두 단어가 사라진 뒤 나타나는 점의 위치를 빠르게 누르는 마음챙김 과제. 검사가 아니라 체험이며, 결과는 기기를 떠나지 않습니다.",
+  "lang": "ko",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fafafa",
+  "theme_color": "#5C4A73",
+  "icons": [
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -29,7 +29,8 @@ const ABBR = { neutral: 'neu', positive: 'pos', negative: 'neg' };
 
 // 단어 데이터: [연령][정서가][언어]. 같은 인덱스 i 는 4언어에서 같은 정서가로 보정됨(직역 아님).
 // 청소년판은 자해·죽음·심각한 가정불화 등을 정서 강도와 무관하게 배제(안전성 기준).
-const WORD_DATA = {
+// export: 정서 점탐사(emo-dotprobe)가 같은 매트릭스를 단일 출처로 재사용한다(import).
+export const WORD_DATA = {
   youth: {
     pos: { ko: ['합격', '친구', '칭찬', '방학', '선물', '소풍'], en: ['passed', 'friend', 'praise', 'vacation', 'gift', 'picnic'],
            es: ['aprobado', 'amigo', 'elogio', 'vacaciones', 'regalo', 'excursión'], zh: ['及格', '朋友', '表扬', '放假', '礼物', '郊游'] },
