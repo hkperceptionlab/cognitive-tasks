@@ -62,6 +62,7 @@ const APPS = [
   { id: 'ablink-adults', dir: 'ablink-adults', kind: 'ablink' },
   { id: 'blindspot', dir: 'blindspot', kind: 'blindspot' },
   { id: 'necker-cube', dir: 'necker-cube', kind: 'necker' },
+  { id: 'afterimage', dir: 'afterimage', kind: 'afterimage' },
 ];
 
 // 범위 지정: `node check.mjs`(전체) / `node check.mjs digitspan`(접두사 일치) / `node check.mjs stroop gonogo`.
@@ -664,6 +665,47 @@ async function checkStopSignal(browser, app) {
     w.reached && w.errors.length === 0 && w.goMedian != null && w.stopRate === 0,
     `도달=${w.reached}·에러${w.errors.length}·GoRT=${w.goMedian}·멈춤성공률=${w.stopRate}%`);
 
+  return { id: app.id, checks };
+}
+
+// ── 잔상 데모(afterimage) 점검 — 판정 없는 데모. 색선택→응시→(타이머 자동전환)→관찰→설명 스모크 ──
+// 주관적 잔상 지각은 QA 대상 아님. '타이머가 실제로 끝나고 회색으로 전환되며 고정점이 유지되는지'만 본다.
+async function checkAfterimage(browser, app) {
+  const checks = [];
+  const add = (n, p, d) => checks.push({ name: n, pass: p, detail: d });
+  const page = await browser.newPage();
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+  page.on('console', (m) => { if (m.type() === 'error') errors.push('console.error: ' + m.text()); });
+  await page.goto(urlFor(app.dir, 'ko'), { waitUntil: 'load' }); // urlFor 이 ?qa=1 → FIXATE_MS=800
+  await sleep(150);
+  const sel = await page.evaluate(() => ({
+    colors: document.querySelectorAll('.ai-color').length,
+    instr: ((document.querySelector('.ai-instruction') || {}).textContent || '').length,
+    langs: document.querySelectorAll('.langbtn').length,
+  }));
+  add('색 선택 화면·색버튼 3·안내문', sel.colors === 3 && sel.instr > 20, JSON.stringify(sel));
+  add('언어 버튼 4개', sel.langs === 4, `langbtn=${sel.langs}`);
+  await page.click('.ai-color[data-c="red"]').catch(() => {});
+  await sleep(100);
+  const fx = await page.evaluate(() => {
+    const p = document.querySelector('.ai-patch');
+    return { patch: !!p, bg: p ? getComputedStyle(p).backgroundColor : null, bar: !!document.querySelector('.ai-bar-fill'), fix: !!document.querySelector('.ai-fix') };
+  });
+  add('응시 단계: 빨강 패치·고정점·타이머 바', fx.patch && /255,\s*0,\s*0/.test(fx.bg || '') && fx.bar && fx.fix, JSON.stringify(fx));
+  await sleep(1200); // QA 타이머(0.8초) 종료 + 여유
+  const ob = await page.evaluate(() => {
+    const p = document.querySelector('.ai-patch');
+    return { patch: !!p, gray: p ? getComputedStyle(p).backgroundColor : null, reports: document.querySelectorAll('.ai-report').length, fix: !!document.querySelector('.ai-fix') };
+  });
+  add('타이머 자동 전환→관찰(회색 패치·고정점 유지·보고버튼 5)', ob.patch && /217,\s*217,\s*217/.test(ob.gray || '') && ob.reports === 5 && ob.fix, JSON.stringify(ob));
+  await page.click('.ai-report[data-r="cyan"]').catch(() => {});
+  await sleep(120);
+  const ex = await page.evaluate(() => ({ has: ((document.querySelector('.ai-explain-body') || {}).textContent || '').length > 40, vs: !!document.querySelector('.ai-vs'), patchGone: !document.querySelector('.ai-patch') }));
+  add('보고→설명(원리·이전 대비)·데모 벗어남', ex.has && ex.vs && ex.patchGone, JSON.stringify(ex));
+  add('JS 에러 없음', errors.length === 0, errors.length ? errors.slice(0, 3).join(' / ') : 'none');
+  await page.close();
   return { id: app.id, checks };
 }
 
@@ -1383,6 +1425,7 @@ const checkOne = (browser, app) =>
           : app.kind === 'ablink' ? checkAblink(browser, app)
           : app.kind === 'blindspot' ? checkBlindspot(browser, app)
           : app.kind === 'necker' ? checkNeckerCube(browser, app)
+          : app.kind === 'afterimage' ? checkAfterimage(browser, app)
             : checkApp(browser, app);
 
 const server = await startServer();

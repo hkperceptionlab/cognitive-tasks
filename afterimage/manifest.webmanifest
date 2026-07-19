@@ -1,0 +1,20 @@
+{
+  "name": "눈이 지쳐서 보이는 색 (잔상 데모)",
+  "short_name": "잔상 데모",
+  "description": "채도 높은 색을 오래 응시한 뒤 회색을 보면 반대색이 떠오르는 잔상을 체험하는 데모(순응·대립과정). 검사가 아니라 체험이며, 결과는 기기를 떠나지 않습니다.",
+  "lang": "ko",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fafafa",
+  "theme_color": "#0E7C86",
+  "icons": [
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

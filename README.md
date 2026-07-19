@@ -7,7 +7,8 @@ N-back, a size discrimination-threshold (JND) task, a visual search task, a
 SART (sustained attention) task, and an attentional-blink task — each with
 separate versions for youth and adults and support for four languages. There
 are also standalone perception demos (experiences, not timed tasks): a
-blind-spot demo and a Necker-cube (bistable perception) demo.
+blind-spot demo, a Necker-cube (bistable perception) demo, and a negative-
+afterimage demo.
 
 This is a **demonstration** tool, not a training program. It makes no promise of
 improving cognitive ability — the point is simply to let people experience how
@@ -47,3 +48,4 @@ Built by a high school student, with coding help from an AI tool (Claude Code).
 - [Attentional blink — Adults](./ablink-adults/)
 - [Blind-spot demo](./blindspot/)
 - [Necker-cube demo](./necker-cube/)
+- [Afterimage demo](./afterimage/)
