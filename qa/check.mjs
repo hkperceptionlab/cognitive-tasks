@@ -60,6 +60,7 @@ const APPS = [
   { id: 'sart-adults', dir: 'sart-adults', kind: 'sart' },
   { id: 'ablink-youth',  dir: 'ablink-youth',  kind: 'ablink' },
   { id: 'ablink-adults', dir: 'ablink-adults', kind: 'ablink' },
+  { id: 'blindspot', dir: 'blindspot', kind: 'blindspot' },
 ];
 
 // 범위 지정: `node check.mjs`(전체) / `node check.mjs digitspan`(접두사 일치) / `node check.mjs stroop gonogo`.
@@ -662,6 +663,44 @@ async function checkStopSignal(browser, app) {
     w.reached && w.errors.length === 0 && w.goMedian != null && w.stopRate === 0,
     `도달=${w.reached}·에러${w.errors.length}·GoRT=${w.goMedian}·멈춤성공률=${w.stopRate}%`);
 
+  return { id: app.id, checks };
+}
+
+// ── 맹점 데모(blindspot) 점검 — 판정 없는 데모라 로드·요소·버튼 동작만(스모크) ──
+async function checkBlindspot(browser, app) {
+  const checks = [];
+  const add = (n, p, d) => checks.push({ name: n, pass: p, detail: d });
+  const page = await browser.newPage();
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+  page.on('console', (m) => { if (m.type() === 'error') errors.push('console.error: ' + m.text()); });
+  await page.goto(urlFor(app.dir, 'ko'), { waitUntil: 'load' });
+  await sleep(150);
+  const st = await page.evaluate(() => ({
+    instr: ((document.querySelector('.bs-instruction') || {}).textContent || '').length,
+    cross: (document.querySelector('.bs-cross') || {}).textContent === '+',
+    dot: !!document.querySelector('.bs-dot'),
+    yes: !!document.querySelector('.bs-btn[data-a="yes"]'),
+    no: !!document.querySelector('.bs-btn[data-a="no"]'),
+    toggle: !!document.querySelector('.bs-toggle'),
+    langs: document.querySelectorAll('.langbtn').length,
+  }));
+  add('화면 로드·안내문·십자가·점·버튼 존재', st.instr > 20 && st.cross && st.dot && st.yes && st.no && st.toggle, JSON.stringify(st));
+  add('언어 버튼 4개', st.langs === 4, `langbtn=${st.langs}`);
+  await page.click('.bs-btn[data-a="yes"]').catch(() => {});
+  await sleep(150);
+  const ex = await page.evaluate(() => ({ has: ((document.querySelector('.bs-explain') || {}).textContent || '').length > 40, gone: !document.querySelector('.bs-arena') }));
+  add('예 클릭→설명(맹점 원리) 전환', ex.has && ex.gone, JSON.stringify(ex));
+  await page.click('.bs-btn[data-act="again"]').catch(() => {});
+  await sleep(120);
+  const b = await page.evaluate(() => document.querySelector('.bs-cross').style.left);
+  await page.click('.bs-toggle').catch(() => {});
+  await sleep(120);
+  const a = await page.evaluate(() => document.querySelector('.bs-cross').style.left);
+  add('반대편 눈 토글로 배치 반전', b !== a && !!a, `cross ${b} → ${a}`);
+  add('JS 에러 없음', errors.length === 0, errors.length ? errors.slice(0, 3).join(' / ') : 'none');
+  await page.close();
   return { id: app.id, checks };
 }
 
@@ -1307,6 +1346,7 @@ const checkOne = (browser, app) =>
           : app.kind === 'vsearch' ? checkVSearch(browser, app)
           : app.kind === 'sart' ? checkSART(browser, app)
           : app.kind === 'ablink' ? checkAblink(browser, app)
+          : app.kind === 'blindspot' ? checkBlindspot(browser, app)
             : checkApp(browser, app);
 
 const server = await startServer();
