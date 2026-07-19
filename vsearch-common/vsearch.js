@@ -258,7 +258,8 @@ export function startVSearch({ id, reps, scale = 1, accent }) {
     ensure(host);
     ruleEl.innerHTML = t('ruleLine');
     btns[0].textContent = t('present'); btns[1].textContent = t('absent');
-    if (phase === 'main') ctx.setProgress(() => `${t('mainLabel')} ${trial.n}`);
+    // 진행표시: 본시행은 "본시행 N", 연습은 "연습". 연습에도 설정해야 재시작 후 이전 회차의 낡은 라벨이 안 남는다.
+    ctx.setProgress(() => (phase === 'main' ? `${t('mainLabel')} ${trial.n}` : t('practiceLabel')));
 
     // 1) 응시점(빈 arena 중앙)
     fixEl.textContent = '+'; statusEl.textContent = ''; statusEl.className = 'vs-status'; setBtns(false);

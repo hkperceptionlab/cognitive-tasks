@@ -153,7 +153,8 @@ export function startSART({ id, trials, scale = 1, accent }) {
     ensure(host);
     ruleEl.innerHTML = t('ruleLine');
     btn.textContent = t('tapBtn');
-    if (phase === 'main') ctx.setProgress(() => `${t('mainLabel')} ${trial.n}`);
+    // 진행표시: 본시행은 "본시행 N", 연습은 "연습". 연습에도 설정해야 재시작 후 이전 회차의 낡은 라벨이 안 남는다.
+    ctx.setProgress(() => (phase === 'main' ? `${t('mainLabel')} ${trial.n}` : t('practiceLabel')));
 
     // 응답 리스너를 자극 페인트 전에 부착(첫 프레임 반응도 인정). 응답창 = 전체 1050ms(숫자+마스크).
     let pressT = null, pressType = null;
