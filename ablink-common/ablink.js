@@ -112,6 +112,8 @@ function analyze(records, t) {
   if (t1Acc != null && t1Acc < 0.7) topNotes.push(t('lowWatchNote'));
   // 캐치("X 없을 때 맞힘")가 낮으면 습관적으로 '있음'을 눌렀을 가능성 안내(해석 도움말, 판정 아님·새 게이트 없음).
   if (catchAcc != null && catchAcc < 0.7) topNotes.push(t('catchLowNote'));
+  // 반대 방향 편향: 근접·여유 둘 다 아주 낮은데 캐치가 아주 높으면 '항상 없음'이라 답했을 가능성(해석 도움말).
+  if (near != null && far != null && near < 0.15 && far < 0.15 && catchAcc != null && catchAcc >= 0.9) topNotes.push(t('alwaysNoNote'));
 
   const pct = (v) => (v == null ? '—' : Math.round(v * 100));
   if (QA) window.__ablinkLast = {
@@ -270,6 +272,7 @@ const STRINGS = {
     sampleNote: '조건당 시행이 몇 개뿐이라 정답률이 회차마다 크게 달라질 수 있습니다. 정밀한 측정이 아닙니다. “X 없을 때 맞힘”은 그냥 찍은 게 아닌지 보는 보조 지표입니다.',
     catchLowNote: '“X 없을 때 맞힘”이 낮게 나왔습니다. X가 없는데도 습관적으로 ‘있음’을 눌렀을 가능성이 있습니다. 그렇다면 위의 근접·여유 “X 맞힘” 값은 실제보다 높게 보일 수 있어, 조심해서 봐야 합니다.',
     lowWatchNote: '숫자를 자주 놓쳤습니다. 빠른 스트림을 제대로 보지 못했다면 아래 X 결과도 믿기 어렵습니다.',
+    alwaysNoNote: '근접·여유의 “X 맞힘”이 둘 다 매우 낮은데 “X 없을 때 맞힘”은 매우 높습니다. X가 있어도 계속 ‘없음’이라고 답했을 가능성이 있습니다. 그렇다면 이 낮은 값은 진짜 깜빡임이 아니라 답하는 습관 때문일 수 있습니다.',
     fbOk: '✓ 맞아요',
     fbNo: '✗ 아니에요',
   },
@@ -291,6 +294,7 @@ const STRINGS = {
     sampleNote: 'There are only a few trials per condition, so accuracy can vary a lot from run to run. This is not a precise measurement. "Correct when no X" is a check that you were not just guessing.',
     catchLowNote: '"Correct when no X" came out low. You may have been pressing "Yes" out of habit even when there was no X. If so, the near/far "X correct" values above may look higher than they really are, so read them with caution.',
     lowWatchNote: 'You missed the digit often. If you were not really watching the fast stream, the X results below are hard to trust.',
+    alwaysNoNote: 'Both near and far "X correct" are very low while "Correct when no X" is very high. You may have been answering "No" even when there was an X. If so, these low values may come from a response habit rather than a real blink.',
     fbOk: '✓ Correct',
     fbNo: '✗ Not quite',
   },
@@ -312,6 +316,7 @@ const STRINGS = {
     sampleNote: '每个条件只有几个试次，所以正确率每次差别很大。这不是精确测量。“无 X 时答对”是用来看你是不是在瞎猜的辅助指标。',
     catchLowNote: '“无 X 时答对”偏低。可能你在没有 X 时也习惯性地按了“有”。若如此，上面近/远的“X 答对”数值可能显得比实际更高，需谨慎解读。',
     lowWatchNote: '你经常没看到数字。如果你没有真正盯着这飞快的字母流，下面的 X 结果也很难可信。',
+    alwaysNoNote: '近和远的“X 答对”都很低，而“无 X 时答对”却很高。可能有 X 时你也一直答“无”。若如此，这些低数值可能来自答题习惯，而不是真正的瞬脱。',
     fbOk: '✓ 对了',
     fbNo: '✗ 不对',
   },
@@ -333,6 +338,7 @@ const STRINGS = {
     sampleNote: 'Solo hay unos pocos ensayos por condición, así que la precisión varía mucho entre rondas. No es una medición precisa. "Correcto cuando no hay X" comprueba que no estabas simplemente adivinando.',
     catchLowNote: '"Correcto cuando no hay X" salió bajo. Puede que hayas pulsado "Sí" por costumbre aunque no hubiera X. Si es así, los valores de "X correcta" de cerca/lejos de arriba pueden parecer más altos de lo que realmente son, así que léelos con cautela.',
     lowWatchNote: 'Fallaste el dígito a menudo. Si no estabas mirando de verdad el flujo rápido, los resultados de X de abajo son difíciles de confiar.',
+    alwaysNoNote: 'Tanto "X correcta" de cerca como de lejos son muy bajos, mientras que "Correcto cuando no hay X" es muy alto. Puede que hayas respondido "No" incluso cuando había una X. Si es así, estos valores bajos pueden deberse a un hábito de respuesta y no a un parpadeo real.',
     fbOk: '✓ Correcto',
     fbNo: '✗ No exacto',
   },
