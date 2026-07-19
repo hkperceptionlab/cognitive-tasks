@@ -61,6 +61,7 @@ const APPS = [
   { id: 'ablink-youth',  dir: 'ablink-youth',  kind: 'ablink' },
   { id: 'ablink-adults', dir: 'ablink-adults', kind: 'ablink' },
   { id: 'blindspot', dir: 'blindspot', kind: 'blindspot' },
+  { id: 'necker-cube', dir: 'necker-cube', kind: 'necker' },
 ];
 
 // 범위 지정: `node check.mjs`(전체) / `node check.mjs digitspan`(접두사 일치) / `node check.mjs stroop gonogo`.
@@ -663,6 +664,40 @@ async function checkStopSignal(browser, app) {
     w.reached && w.errors.length === 0 && w.goMedian != null && w.stopRate === 0,
     `도달=${w.reached}·에러${w.errors.length}·GoRT=${w.goMedian}·멈춤성공률=${w.stopRate}%`);
 
+  return { id: app.id, checks };
+}
+
+// ── 네커 큐브 데모(necker-cube) 점검 — 판정 없는 데모라 로드·요소·버튼 동작만(스모크) ──
+async function checkNeckerCube(browser, app) {
+  const checks = [];
+  const add = (n, p, d) => checks.push({ name: n, pass: p, detail: d });
+  const page = await browser.newPage();
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+  page.on('console', (m) => { if (m.type() === 'error') errors.push('console.error: ' + m.text()); });
+  await page.goto(urlFor(app.dir, 'ko'), { waitUntil: 'load' });
+  await sleep(150);
+  const st = await page.evaluate(() => ({
+    instr: ((document.querySelector('.nc-instruction') || {}).textContent || '').length,
+    cube: !!document.querySelector('.nc-cube'),
+    lines: document.querySelectorAll('.nc-cube line').length,
+    reports: document.querySelectorAll('.nc-report').length,
+    toEx: !!document.querySelector('.nc-toexplain'),
+    langs: document.querySelectorAll('.langbtn').length,
+  }));
+  add('화면 로드·안내문·큐브(12선)·보고버튼2·설명버튼', st.instr > 20 && st.cube && st.lines === 12 && st.reports === 2 && st.toEx, JSON.stringify(st));
+  add('언어 버튼 4개', st.langs === 4, `langbtn=${st.langs}`);
+  await page.click('.nc-report[data-opt="a"]').catch(() => {});
+  await sleep(80);
+  const c1 = await page.evaluate(() => ({ count: !!document.querySelector('.nc-count'), cube: !!document.querySelector('.nc-cube') }));
+  add('보고 버튼→카운트 표시·큐브 유지(관찰 안 끊김)', c1.count && c1.cube, JSON.stringify(c1));
+  await page.click('.nc-toexplain').catch(() => {});
+  await sleep(120);
+  const ex = await page.evaluate(() => ({ has: ((document.querySelector('.nc-explain') || {}).textContent || '').length > 40, vs: !!document.querySelector('.nc-vs'), cubeGone: !document.querySelector('.nc-cube') }));
+  add('설명 버튼→원리 설명(맹점 대비)·데모 벗어남', ex.has && ex.vs && ex.cubeGone, JSON.stringify(ex));
+  add('JS 에러 없음', errors.length === 0, errors.length ? errors.slice(0, 3).join(' / ') : 'none');
+  await page.close();
   return { id: app.id, checks };
 }
 
@@ -1347,6 +1382,7 @@ const checkOne = (browser, app) =>
           : app.kind === 'sart' ? checkSART(browser, app)
           : app.kind === 'ablink' ? checkAblink(browser, app)
           : app.kind === 'blindspot' ? checkBlindspot(browser, app)
+          : app.kind === 'necker' ? checkNeckerCube(browser, app)
             : checkApp(browser, app);
 
 const server = await startServer();
