@@ -3,9 +3,9 @@
 A collection of web-based cognitive, perception, and attention tasks —
 currently Stroop, Go/No-go, Corsi block-tapping, Digit Span Backward, Simple
 Reaction Time, the Simon task, a Stop-signal (stopping) task, Mental Rotation,
-N-back, a size discrimination-threshold (JND) task, a visual search task, and
-a SART (sustained attention) task — each with separate versions for youth and
-adults and support for four languages.
+N-back, a size discrimination-threshold (JND) task, a visual search task, a
+SART (sustained attention) task, and an attentional-blink task — each with
+separate versions for youth and adults and support for four languages.
 
 This is a **demonstration** tool, not a training program. It makes no promise of
 improving cognitive ability — the point is simply to let people experience how
@@ -41,3 +41,5 @@ Built by a high school student, with coding help from an AI tool (Claude Code).
 - [Visual search — Adults](./vsearch-adults/)
 - [Sustained attention (SART) — Youth](./sart-youth/)
 - [Sustained attention (SART) — Adults](./sart-adults/)
+- [Attentional blink — Youth](./ablink-youth/)
+- [Attentional blink — Adults](./ablink-adults/)

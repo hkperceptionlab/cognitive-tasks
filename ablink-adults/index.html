@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>깜빡 놓치는 순간 (성인)</title>
+  <meta name="theme-color" content="#5C4A73" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icons/icon.svg" />
+  <link rel="apple-touch-icon" href="./icons/icon.svg" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+</head>
+<body>
+  <div id="app"></div>
+
+  <script type="module">
+    import { startAblink } from '../ablink-common/ablink.js';
+
+    // 성인: 조건당 12 → 근접12·여유12·캐치6 = 30시행. 속도는 청소년과 동일(현상), 크기만 1.5배.
+    startAblink({
+      id: 'ablink-adults',
+      reps: 12,
+      scale: 1.5,
+    });
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    }
+  </script>
+</body>
+</html>

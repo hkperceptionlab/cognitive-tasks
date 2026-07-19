@@ -58,6 +58,8 @@ const APPS = [
   { id: 'vsearch-adults', dir: 'vsearch-adults', kind: 'vsearch' },
   { id: 'sart-youth',  dir: 'sart-youth',  kind: 'sart' },
   { id: 'sart-adults', dir: 'sart-adults', kind: 'sart' },
+  { id: 'ablink-youth',  dir: 'ablink-youth',  kind: 'ablink' },
+  { id: 'ablink-adults', dir: 'ablink-adults', kind: 'ablink' },
 ];
 
 // 범위 지정: `node check.mjs`(전체) / `node check.mjs digitspan`(접두사 일치) / `node check.mjs stroop gonogo`.
@@ -663,6 +665,106 @@ async function checkStopSignal(browser, app) {
   return { id: app.id, checks };
 }
 
+// ── 주의 순간멈춤(Attentional Blink) 점검 ──────────────────────────────
+// 봇은 `.ab-wrap[data-t1/data-t2]`(?qa=1 전용, 사람이 스트림에서 얻는 정보)를 읽어 Q1·Q2 응답.
+//   correct: 숫자·X유무 그대로 → 근접·여유·캐치 다 정답률 높음.
+//   wrong  : 항상 다르게 → 숫자·T2 종합 정답률 낮음.
+//   anytime: 무작위 → 숫자 우연(~12.5%, 8지선다)·T2 종합 우연(~50%).
+function installAblinkBot(strategy) {
+  window.__seen = new Set();
+  window.__abTimer = setInterval(() => {
+    const panel = document.getElementById('cog-panel');
+    if (panel && !panel.hidden && panel.querySelector('.summary')) return;
+    const wrap = document.querySelector('.ab-wrap');
+    const resp = document.querySelector('.ab-response');
+    if (!wrap || !resp || resp.hidden || !resp.dataset.q) return;   // 응답 페이즈일 때만
+    const seq = wrap.dataset.seq || '', q = resp.dataset.q;
+    const key = seq + '|' + q;
+    if (window.__seen.has(key)) return;
+    window.__seen.add(key);
+    setTimeout(() => {
+      const r = document.querySelector('.ab-response');
+      if (!r || r.hidden || r.dataset.q !== q) return;
+      if (q === '1') {
+        const t1 = parseInt(wrap.dataset.t1, 10);
+        let d;
+        if (strategy === 'correct') d = t1;
+        else if (strategy === 'wrong') d = (t1 === 9 ? 8 : t1 + 1);   // 확실히 다른 숫자
+        else { const o = [2,3,4,5,6,7,8,9]; d = o[Math.floor(Math.random() * o.length)]; }
+        const b = r.querySelector('.ab-q1btn[data-digit="' + d + '"]');
+        if (b) b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' }));
+      } else {
+        const t2 = wrap.dataset.t2;                                   // 'present'|'absent'
+        let ans;
+        if (strategy === 'correct') ans = t2;
+        else if (strategy === 'wrong') ans = (t2 === 'present' ? 'absent' : 'present');
+        else ans = (Math.random() < 0.5 ? 'present' : 'absent');
+        const b = r.querySelector('.ab-q2btn[data-resp="' + ans + '"]');
+        if (b) b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' }));
+      }
+    }, 150);
+  }, 20);
+}
+
+async function playAblink(browser, url, id, strategy) {
+  const page = await browser.newPage();
+  await page.setViewport({ width: 390, height: 900, deviceScaleFactor: 2 });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+  page.on('console', (m) => { if (m.type() === 'error') errors.push('console.error: ' + m.text()); });
+  await page.goto(url, { waitUntil: 'load' });
+  await page.evaluate((i) => { try { localStorage.removeItem('cog:' + i + ':sessions'); } catch {} }, id);
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('#cog-action', { timeout: 15000 });
+  await page.evaluate(installAblinkBot, strategy);
+  const t0 = Date.now();
+  let reached = false;
+  while (Date.now() - t0 < RUN_TIMEOUT) {
+    const st = await page.evaluate(() => {
+      const panel = document.getElementById('cog-panel');
+      return { visible: panel && !panel.hidden, hasSummary: !!(panel && panel.querySelector('.summary')),
+        hasAction: !!(panel && panel.querySelector('#cog-action')) };
+    });
+    if (st.visible && st.hasSummary) { reached = true; break; }
+    if (st.visible && st.hasAction && !st.hasSummary) { await page.click('#cog-action').catch(() => {}); await sleep(120); }
+    await sleep(100);
+  }
+  const info = reached ? await page.evaluate(() => {
+    const panel = document.getElementById('cog-panel');
+    const last = window.__ablinkLast || {};
+    return { t1Acc: last.t1Acc == null ? null : last.t1Acc, near: last.near == null ? null : last.near,
+      far: last.far == null ? null : last.far, catch: last.catch == null ? null : last.catch,
+      t2Overall: last.t2Overall == null ? null : last.t2Overall, overall: last.overall == null ? null : last.overall,
+      chart: !!panel.querySelector('.ab-bars') };
+  }) : { t1Acc: null, near: null, far: null, catch: null, t2Overall: null, overall: null, chart: false };
+  await page.close();
+  return { errors, reached, ...info };
+}
+
+async function checkAblink(browser, app) {
+  const checks = [];
+  const add = (name, pass, detail) => checks.push({ name, pass, detail });
+
+  const c = await playAblink(browser, urlFor(app.dir, 'ko'), app.id, 'correct');
+  add('정답봇 결과 도달', c.reached, c.reached ? 'ok' : `${RUN_TIMEOUT}ms 내 요약 없음`);
+  add('정답봇 JS 에러 없음', c.errors.length === 0, c.errors.length ? c.errors.slice(0, 3).join(' / ') : 'none');
+  add('정답봇: 숫자·근접·여유·캐치 정답률 높음·차트',
+    c.reached && c.t1Acc != null && c.t1Acc >= 90 && c.near != null && c.near >= 90 && c.far != null && c.far >= 90 && c.catch != null && c.catch >= 90 && c.chart,
+    `숫자=${c.t1Acc}%·근접=${c.near}%·여유=${c.far}%·캐치=${c.catch}%·차트=${c.chart}`);
+
+  const w = await playAblink(browser, urlFor(app.dir, 'ko'), app.id, 'wrong');
+  add('오답봇: 숫자·T2 종합 정답률 낮음',
+    w.reached && w.errors.length === 0 && w.t1Acc != null && w.t1Acc <= 10 && w.t2Overall != null && w.t2Overall <= 10,
+    `도달=${w.reached}·에러${w.errors.length}·숫자=${w.t1Acc}%·T2종합=${w.t2Overall}%`);
+
+  const a = await playAblink(browser, urlFor(app.dir, 'ko'), app.id, 'anytime');
+  add('아무때나봇: 숫자 우연(~12.5%)·T2 종합 우연(~50%)',
+    a.reached && a.errors.length === 0 && a.t1Acc != null && a.t1Acc < 50 && a.t2Overall != null && a.t2Overall > 10 && a.t2Overall < 90,
+    `숫자=${a.t1Acc}%·T2종합=${a.t2Overall}%`);
+
+  return { id: app.id, checks };
+}
+
 // ── SART("무심코 누르는 순간") 점검 ────────────────────────────────────
 // 봇은 `.sart-wrap[data-digit]`(?qa=1에서만 노출된, 사람이 보는 숫자)을 읽어 3이 아니면 누른다.
 //   correct : 3만 빼고 누름 → 3 오류율0·반응정확도~100·RT흔들림 산출.
@@ -1204,6 +1306,7 @@ const checkOne = (browser, app) =>
           : app.kind === 'jnd' ? checkJnd(browser, app)
           : app.kind === 'vsearch' ? checkVSearch(browser, app)
           : app.kind === 'sart' ? checkSART(browser, app)
+          : app.kind === 'ablink' ? checkAblink(browser, app)
             : checkApp(browser, app);
 
 const server = await startServer();
