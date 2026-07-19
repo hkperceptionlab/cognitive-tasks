@@ -64,6 +64,8 @@ const APPS = [
   { id: 'necker-cube', dir: 'necker-cube', kind: 'necker' },
   { id: 'afterimage', dir: 'afterimage', kind: 'afterimage' },
   { id: 'inattentional-blindness', dir: 'inattentional-blindness', kind: 'ib' },
+  { id: 'emo-stroop-youth',  dir: 'emo-stroop-youth',  kind: 'emo-stroop' },
+  { id: 'emo-stroop-adults', dir: 'emo-stroop-adults', kind: 'emo-stroop' },
 ];
 
 // 범위 지정: `node check.mjs`(전체) / `node check.mjs digitspan`(접두사 일치) / `node check.mjs stroop gonogo`.
@@ -753,6 +755,92 @@ async function checkIb(browser, app) {
     rev.explain > 40 && rev.vs && !rev.counting && !rev.start, JSON.stringify(rev));
   add('JS 에러 없음', errors.length === 0, errors.length ? errors.slice(0, 3).join(' / ') : 'none');
   await page.close();
+  return { id: app.id, checks };
+}
+
+// ── 정서 스트룹(emo-stroop) 점검 — 색 명명 정답=잉크색과 같은 배경색 버튼. 두 게이트 독립 확인 ──
+// 정답봇: 전부 정답 → 경고 안 뜸 + 간섭 숫자. 오답봇: 조건당 첫 본시행 1개만 오답 → 정확도<90%(경고 O)
+// 이지만 조건별 유효시행은 ≥6 유지 → 간섭도 숫자(정확도 게이트와 정서효과 게이트가 안 섞임을 못박음).
+// 아무때나봇: 무작위 응답 → JS 에러 없이 끝까지. 판정값은 window.__emoLast(analyze QA 노출)로 직접 단언.
+function installEmoStroopBot(strategy) {
+  window.__seen = new Set();
+  window.__wrongDone = new Set();
+  window.__emoTimer = setInterval(() => {
+    const pad = document.getElementById('cog-pad');
+    const stim = document.getElementById('cog-stimulus');
+    const prog = document.getElementById('cog-progress');
+    if (!pad || !stim || pad.hidden || !pad.classList.contains('live')) return;
+    const key = prog ? prog.textContent : String(Date.now());
+    if (window.__seen.has(key)) return;
+    window.__seen.add(key);
+    const cond = stim.dataset.cond || '', phase = stim.dataset.phase || '';
+    let wrongThis = false;
+    if (strategy === 'wrong' && phase === 'main' && cond && !window.__wrongDone.has(cond)) {
+      window.__wrongDone.add(cond); wrongThis = true; // 조건당 정확히 1오답 → 정확도<90%, 유효≥6 유지
+    }
+    setTimeout(() => {
+      const p = document.getElementById('cog-pad');
+      if (!p || !p.classList.contains('live')) return;
+      const ink = getComputedStyle(document.getElementById('cog-stimulus')).color;
+      const btns = [...p.querySelectorAll('.choice')];
+      const correctBtn = btns.find((b) => getComputedStyle(b).backgroundColor === ink);
+      const wrongBtn = btns.find((b) => getComputedStyle(b).backgroundColor !== ink);
+      let target = correctBtn;
+      if (strategy === 'anytime') target = btns[Math.floor(Math.random() * btns.length)];
+      else if (strategy === 'wrong' && wrongThis) target = wrongBtn;
+      if (target) target.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' }));
+    }, 350); // 페이지 컨텍스트 주입이라 RESPOND_MS(모듈 상수) 못 씀 — Simon·Stop 봇처럼 350 하드코딩
+  }, 20);
+}
+
+async function playEmoStroop(browser, url, id, strategy) {
+  const page = await browser.newPage();
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+  page.on('console', (m) => { if (m.type() === 'error') errors.push('console.error: ' + m.text()); });
+  await page.goto(url, { waitUntil: 'load' });
+  await page.evaluate((i) => { try { localStorage.removeItem('cog:' + i + ':sessions'); } catch {} }, id);
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('#cog-action', { timeout: 15000 });
+  await page.evaluate(installEmoStroopBot, strategy);
+  const t0 = Date.now();
+  let reached = false;
+  while (Date.now() - t0 < RUN_TIMEOUT) {
+    const st = await page.evaluate(() => {
+      const panel = document.getElementById('cog-panel');
+      return { visible: panel && !panel.hidden, hasSummary: !!(panel && panel.querySelector('.summary')),
+        hasAction: !!(panel && panel.querySelector('#cog-action')) };
+    });
+    if (st.visible && st.hasSummary) { reached = true; break; }
+    if (st.visible && st.hasAction && !st.hasSummary) { await page.click('#cog-action').catch(() => {}); await sleep(120); }
+    await sleep(100);
+  }
+  const last = reached ? await page.evaluate(() => window.__emoLast || null) : null;
+  await page.close();
+  return { errors, reached, last };
+}
+
+async function checkEmoStroop(browser, app) {
+  const checks = [];
+  const add = (n, p, d) => checks.push({ name: n, pass: p, detail: d });
+
+  const c = await playEmoStroop(browser, urlFor(app.dir, 'ko'), app.id, 'correct');
+  add('정답봇 결과 도달', c.reached, c.reached ? 'ok' : `${RUN_TIMEOUT}ms 내 요약 없음`);
+  add('정답봇 JS 에러 없음', c.errors.length === 0, c.errors.length ? c.errors.slice(0, 3).join(' / ') : 'none');
+  add('정답봇: 정확도 경고 안 뜸 + 간섭 숫자 표시',
+    !!c.last && c.last.lowAcc === false && c.last.negInt != null && c.last.posInt != null,
+    c.last ? `경고=${c.last.lowAcc}·부정간섭=${c.last.negInt}·긍정간섭=${c.last.posInt}·유효[${c.last.neuCount},${c.last.posCount},${c.last.negCount}]` : '값 없음');
+
+  const w = await playEmoStroop(browser, urlFor(app.dir, 'ko'), app.id, 'wrong');
+  add('오답봇 결과 도달·JS 에러 없음', w.reached && w.errors.length === 0, `도달=${w.reached}·에러${w.errors.length}`);
+  add('오답봇: 정확도<90% 경고 O · 간섭 표시 O (두 게이트 독립)',
+    !!w.last && w.last.acc < 0.9 && w.last.lowAcc === true && w.last.negInt != null && w.last.posInt != null,
+    w.last ? `정확도=${Math.round(w.last.acc * 100)}%·경고=${w.last.lowAcc}·부정간섭=${w.last.negInt}·긍정간섭=${w.last.posInt}` : '값 없음');
+
+  const a = await playEmoStroop(browser, urlFor(app.dir, 'ko'), app.id, 'anytime');
+  add('아무때나봇: JS 에러 없이 결과 도달', a.reached && a.errors.length === 0, `도달=${a.reached}·에러${a.errors.length}`);
+
   return { id: app.id, checks };
 }
 
@@ -1474,6 +1562,7 @@ const checkOne = (browser, app) =>
           : app.kind === 'necker' ? checkNeckerCube(browser, app)
           : app.kind === 'afterimage' ? checkAfterimage(browser, app)
           : app.kind === 'ib' ? checkIb(browser, app)
+          : app.kind === 'emo-stroop' ? checkEmoStroop(browser, app)
             : checkApp(browser, app);
 
 const server = await startServer();

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>정서 스트룹 (청소년)</title>
+  <meta name="theme-color" content="#5C4A73" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icons/icon.svg" />
+  <link rel="apple-touch-icon" href="./icons/icon.svg" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+</head>
+<body>
+  <div id="app"></div>
+
+  <script type="module">
+    import { startEmoStroop } from '../emo-stroop-common/emo-stroop.js';
+
+    // 청소년: 조건당 8문항(중립8·긍정8·부정8 = 24), 문항당 3초 제한, 기본 크기.
+    // (조건당 8이라 간섭 게이트 ≥6 유효시행에 여유. 단어 6개는 초과분 재순환 — 스트룹 표준.)
+    startEmoStroop({
+      id: 'emo-stroop-youth',
+      wordSet: 'youth',
+      mainCountPerCond: 8, // ×3조건 = 24
+      timeLimitMs: 3000,
+      scale: 1,
+    });
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    }
+  </script>
+</body>
+</html>

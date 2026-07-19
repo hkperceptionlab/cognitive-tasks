@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>정서 스트룹 (성인)</title>
+  <meta name="theme-color" content="#5C4A73" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icons/icon.svg" />
+  <link rel="apple-touch-icon" href="./icons/icon.svg" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+</head>
+<body>
+  <div id="app"></div>
+
+  <script type="module">
+    import { startEmoStroop } from '../emo-stroop-common/emo-stroop.js';
+
+    // 성인: 조건당 10문항(중립10·긍정10·부정10 = 30), 시간 제한 없음, 글자·버튼 1.5배.
+    // (조건당 10이라 간섭 게이트 ≥6 유효시행에 여유. 단어 8개는 초과분 재순환 — 스트룹 표준.)
+    startEmoStroop({
+      id: 'emo-stroop-adults',
+      wordSet: 'adults',
+      mainCountPerCond: 10, // ×3조건 = 30
+      timeLimitMs: null,
+      scale: 1.5,
+    });
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    }
+  </script>
+</body>
+</html>

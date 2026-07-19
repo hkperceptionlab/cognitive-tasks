@@ -4,8 +4,9 @@ A collection of web-based cognitive, perception, and attention tasks —
 currently Stroop, Go/No-go, Corsi block-tapping, Digit Span Backward, Simple
 Reaction Time, the Simon task, a Stop-signal (stopping) task, Mental Rotation,
 N-back, a size discrimination-threshold (JND) task, a visual search task, a
-SART (sustained attention) task, and an attentional-blink task — each with
-separate versions for youth and adults and support for four languages. There
+SART (sustained attention) task, an attentional-blink task, and an emotional
+Stroop task — each with separate versions for youth and adults and support for
+four languages. There
 are also standalone perception demos (experiences, not timed tasks): a
 blind-spot demo, a Necker-cube (bistable perception) demo, a negative-
 afterimage demo, and an inattentional-blindness demo.
@@ -46,6 +47,8 @@ Built by a high school student, with coding help from an AI tool (Claude Code).
 - [Sustained attention (SART) — Adults](./sart-adults/)
 - [Attentional blink — Youth](./ablink-youth/)
 - [Attentional blink — Adults](./ablink-adults/)
+- [Emotional Stroop — Youth](./emo-stroop-youth/)
+- [Emotional Stroop — Adults](./emo-stroop-adults/)
 - [Blind-spot demo](./blindspot/)
 - [Necker-cube demo](./necker-cube/)
 - [Afterimage demo](./afterimage/)
