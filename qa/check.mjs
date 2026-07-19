@@ -63,6 +63,7 @@ const APPS = [
   { id: 'blindspot', dir: 'blindspot', kind: 'blindspot' },
   { id: 'necker-cube', dir: 'necker-cube', kind: 'necker' },
   { id: 'afterimage', dir: 'afterimage', kind: 'afterimage' },
+  { id: 'inattentional-blindness', dir: 'inattentional-blindness', kind: 'ib' },
 ];
 
 // 범위 지정: `node check.mjs`(전체) / `node check.mjs digitspan`(접두사 일치) / `node check.mjs stroop gonogo`.
@@ -704,6 +705,52 @@ async function checkAfterimage(browser, app) {
   await sleep(120);
   const ex = await page.evaluate(() => ({ has: ((document.querySelector('.ai-explain-body') || {}).textContent || '').length > 40, vs: !!document.querySelector('.ai-vs'), patchGone: !document.querySelector('.ai-patch') }));
   add('보고→설명(원리·이전 대비)·데모 벗어남', ex.has && ex.vs && ex.patchGone, JSON.stringify(ex));
+  add('JS 에러 없음', errors.length === 0, errors.length ? errors.slice(0, 3).join(' / ') : 'none');
+  await page.close();
+  return { id: app.id, checks };
+}
+
+// ── 부주의맹 데모(inattentional-blindness) 점검 — 판정 없는 데모. 두 경로만 스모크 ──
+// 부주의맹은 '처음 볼 때만' 효과가 있어, 완료 기록(ib_demo_completed)이 있으면 counting 을 재생하지
+// 않고 곧바로 설명(revisit)으로 간다. 주관적 지각(놓쳤는지)은 QA 대상 아님 — 분기 두 개만 확인:
+//   1) 완료 기록 없음 → intro 진입(시작 버튼·안내문 있고, counting/자극은 아직 아님)
+//   2) ib_demo_completed='1' 세팅+새로고침 → revisit 직행(counting/stage-box·시작 버튼 렌더 안 됨)
+async function checkIb(browser, app) {
+  const checks = [];
+  const add = (n, p, d) => checks.push({ name: n, pass: p, detail: d });
+  const page = await browser.newPage();
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+  page.on('console', (m) => { if (m.type() === 'error') errors.push('console.error: ' + m.text()); });
+
+  // 경로 1 — 완료 기록을 지우고 처음부터: intro 진입해야 한다.
+  await page.goto(urlFor(app.dir, 'ko'), { waitUntil: 'load' });
+  await page.evaluate(() => { try { localStorage.removeItem('ib_demo_completed'); } catch {} });
+  await page.reload({ waitUntil: 'load' });
+  await sleep(150);
+  const intro = await page.evaluate(() => ({
+    start: !!document.querySelector('[data-act="start"]'),
+    instr: ((document.querySelector('.ib-instruction') || {}).textContent || '').length,
+    counting: !!document.querySelector('.ib-stage-box'),   // 아직 렌더되면 안 됨
+    langs: document.querySelectorAll('.langbtn').length,
+  }));
+  add('첫 방문: intro 진입(시작 버튼·안내문, counting 아직 아님)',
+    intro.start && intro.instr > 20 && !intro.counting, JSON.stringify(intro));
+  add('언어 버튼 4개', intro.langs === 4, `langbtn=${intro.langs}`);
+
+  // 경로 2 — 완료 기록을 세팅하고 새로고침: revisit 로 직행(counting 렌더 안 됨).
+  await page.evaluate(() => { try { localStorage.setItem('ib_demo_completed', '1'); } catch {} });
+  await page.reload({ waitUntil: 'load' });
+  await sleep(150);
+  const rev = await page.evaluate(() => ({
+    explain: ((document.querySelector('.ib-explain-body') || {}).textContent || '').length,
+    vs: !!document.querySelector('.ib-vs'),
+    counting: !!document.querySelector('.ib-stage-box'),   // revisit 엔 없어야 함
+    start: !!document.querySelector('[data-act="start"]'), // intro 도 아님
+  }));
+  add('완료 기록 → revisit 직행(설명 표시·counting/intro 렌더 안 됨)',
+    rev.explain > 40 && rev.vs && !rev.counting && !rev.start, JSON.stringify(rev));
   add('JS 에러 없음', errors.length === 0, errors.length ? errors.slice(0, 3).join(' / ') : 'none');
   await page.close();
   return { id: app.id, checks };
@@ -1426,6 +1473,7 @@ const checkOne = (browser, app) =>
           : app.kind === 'blindspot' ? checkBlindspot(browser, app)
           : app.kind === 'necker' ? checkNeckerCube(browser, app)
           : app.kind === 'afterimage' ? checkAfterimage(browser, app)
+          : app.kind === 'ib' ? checkIb(browser, app)
             : checkApp(browser, app);
 
 const server = await startServer();

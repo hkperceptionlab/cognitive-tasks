@@ -1,0 +1,20 @@
+{
+  "name": "보고도 못 본 순간 (부주의맹 데모)",
+  "short_name": "부주의맹 데모",
+  "description": "한 가지 과제에 주의를 쏟는 동안, 눈에 다 들어온 뻔한 것을 못 알아채는 부주의맹을 체험하는 데모. 검사가 아니라 체험이며, 처음 볼 때만 효과가 있고 기록은 기기를 떠나지 않습니다.",
+  "lang": "ko",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fafafa",
+  "theme_color": "#0E7C86",
+  "icons": [
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
