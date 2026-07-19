@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>무심코 누르는 순간 (청소년)</title>
+  <meta name="theme-color" content="#5C4A73" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icons/icon.svg" />
+  <link rel="apple-touch-icon" href="./icons/icon.svg" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+</head>
+<body>
+  <div id="app"></div>
+
+  <script type="module">
+    import { startSART } from '../sart-common/sart.js';
+
+    // 청소년: 90시행(약 2분). 속도는 성인과 동일(자동성), 크기만 기본.
+    startSART({
+      id: 'sart-youth',
+      trials: 90,
+      scale: 1,
+    });
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    }
+  </script>
+</body>
+</html>

@@ -56,6 +56,7 @@ const FAMILY_COLORS = {
   speed: '#6B2D5C',      // 단순 반응속도 (진한 자주)
   spatial: '#A04A15',    // 도형 회전 등 공간 변형 (번트 오렌지, 대비 6.0:1)
   perception: '#0E7C86', // 변별 역치 등 지각 (청록, 흰 배경 대비 4.95:1)
+  mindfulness: '#5C4A73', // 무심코 누르는 순간(SART) 등 (차분한 자보라, 흰 배경 대비 7.83:1)
 };
 const DEFAULT_ACCENT = FAMILY_COLORS.inhibition;
 

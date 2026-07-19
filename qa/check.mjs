@@ -56,6 +56,8 @@ const APPS = [
   { id: 'jnd-adults', dir: 'jnd-adults', kind: 'jnd' },
   { id: 'vsearch-youth',  dir: 'vsearch-youth',  kind: 'vsearch' },
   { id: 'vsearch-adults', dir: 'vsearch-adults', kind: 'vsearch' },
+  { id: 'sart-youth',  dir: 'sart-youth',  kind: 'sart' },
+  { id: 'sart-adults', dir: 'sart-adults', kind: 'sart' },
 ];
 
 // 범위 지정: `node check.mjs`(전체) / `node check.mjs digitspan`(접두사 일치) / `node check.mjs stroop gonogo`.
@@ -661,6 +663,91 @@ async function checkStopSignal(browser, app) {
   return { id: app.id, checks };
 }
 
+// ── SART("무심코 누르는 순간") 점검 ────────────────────────────────────
+// 봇은 `.sart-wrap[data-digit]`(?qa=1에서만 노출된, 사람이 보는 숫자)을 읽어 3이 아니면 누른다.
+//   correct : 3만 빼고 누름 → 3 오류율0·반응정확도~100·RT흔들림 산출.
+//   wrong   : 3에도 누름 → 3 오류율100(놓쳐 누름)·반응정확도~100.
+//   anytime : 무작위 → 반응정확도 중간대(우연). 흰 화면 없음.
+function installSARTBot(strategy) {
+  window.__seen = new Set();
+  window.__sartTimer = setInterval(() => {
+    const panel = document.getElementById('cog-panel');
+    if (panel && !panel.hidden && panel.querySelector('.summary')) return;
+    const wrap = document.querySelector('.sart-wrap');
+    if (!wrap || !wrap.dataset.seq) return;
+    const key = wrap.dataset.seq;
+    if (window.__seen.has(key)) return;
+    window.__seen.add(key);
+    const digit = parseInt(wrap.dataset.digit, 10);
+    let press;
+    if (strategy === 'correct') press = digit !== 3;
+    else if (strategy === 'wrong') press = true;
+    else press = Math.random() < 0.5;
+    if (press) {
+      const delay = 200 + Math.random() * 120; // RT>=200 유효 + 약간의 흔들림(RT SD 산출)
+      setTimeout(() => { const b = document.querySelector('.sart-btn'); if (b) b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' })); }, delay);
+    }
+  }, 15);
+}
+
+async function playSART(browser, url, id, strategy) {
+  const page = await browser.newPage();
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+  page.on('console', (m) => { if (m.type() === 'error') errors.push('console.error: ' + m.text()); });
+  await page.goto(url, { waitUntil: 'load' });
+  await page.evaluate((i) => { try { localStorage.removeItem('cog:' + i + ':sessions'); } catch {} }, id);
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('#cog-action', { timeout: 15000 });
+  await page.evaluate(installSARTBot, strategy);
+  const t0 = Date.now();
+  let reached = false;
+  while (Date.now() - t0 < RUN_TIMEOUT) {
+    const st = await page.evaluate(() => {
+      const panel = document.getElementById('cog-panel');
+      return { visible: panel && !panel.hidden, hasSummary: !!(panel && panel.querySelector('.summary')),
+        hasAction: !!(panel && panel.querySelector('#cog-action')) };
+    });
+    if (st.visible && st.hasSummary) { reached = true; break; }
+    if (st.visible && st.hasAction && !st.hasSummary) { await page.click('#cog-action').catch(() => {}); await sleep(120); }
+    await sleep(100);
+  }
+  const info = reached ? await page.evaluate(() => {
+    const panel = document.getElementById('cog-panel');
+    const last = window.__sartLast || {};
+    return { targetErr: last.targetErr == null ? null : last.targetErr, goAcc: last.goAcc == null ? null : last.goAcc,
+      rtSd: last.rtSd == null ? null : last.rtSd, overall: last.overall == null ? null : last.overall,
+      spark: !!panel.querySelector('.sart-spark svg') };
+  }) : { targetErr: null, goAcc: null, rtSd: null, overall: null, spark: false };
+  await page.close();
+  return { errors, reached, ...info };
+}
+
+async function checkSART(browser, app) {
+  const checks = [];
+  const add = (name, pass, detail) => checks.push({ name, pass, detail });
+
+  const c = await playSART(browser, urlFor(app.dir, 'ko'), app.id, 'correct');
+  add('정답봇 결과 도달', c.reached, c.reached ? 'ok' : `${RUN_TIMEOUT}ms 내 요약 없음`);
+  add('정답봇 JS 에러 없음', c.errors.length === 0, c.errors.length ? c.errors.slice(0, 3).join(' / ') : 'none');
+  add('정답봇: 3 오류율 0·반응정확도 높음·흔들림(RT SD) 산출·스파크',
+    c.reached && c.targetErr === 0 && c.goAcc != null && c.goAcc >= 90 && c.rtSd != null && c.spark,
+    `3오류율=${c.targetErr}%·반응정확도=${c.goAcc}%·RT흔들림=${c.rtSd}ms·spark=${c.spark}`);
+
+  const w = await playSART(browser, urlFor(app.dir, 'ko'), app.id, 'wrong');
+  add('오답봇: 3에도 반응→3 오류율 100·반응정확도 높음',
+    w.reached && w.errors.length === 0 && w.targetErr === 100 && w.goAcc != null && w.goAcc >= 90,
+    `도달=${w.reached}·에러${w.errors.length}·3오류율=${w.targetErr}%·반응정확도=${w.goAcc}%`);
+
+  const a = await playSART(browser, urlFor(app.dir, 'ko'), app.id, 'anytime');
+  add('아무때나봇: 무작위→반응정확도 중간대(우연, 완벽 아님)·흰 화면 없음',
+    a.reached && a.errors.length === 0 && a.goAcc != null && a.goAcc > 10 && a.goAcc < 90,
+    `도달=${a.reached}·에러${a.errors.length}·반응정확도=${a.goAcc}%·3오류율=${a.targetErr}%`);
+
+  return { id: app.id, checks };
+}
+
 // ── 시각 탐색(Visual Search) 점검 ──────────────────────────────────────
 // 봇은 `.vs-item[data-target="1"]`(빨간 원)이 있는지 '보고'(사람이 보는 것과 동일) 있음/없음 응답.
 //   correct : 정확히 응답. 특징=일정 지연(항목수 무관→기울기 평탄) / 결합=항목수 비례 지연(직렬→양의 기울기).
@@ -1116,6 +1203,7 @@ const checkOne = (browser, app) =>
           : app.kind === 'nback' ? checkNback(browser, app)
           : app.kind === 'jnd' ? checkJnd(browser, app)
           : app.kind === 'vsearch' ? checkVSearch(browser, app)
+          : app.kind === 'sart' ? checkSART(browser, app)
             : checkApp(browser, app);
 
 const server = await startServer();
