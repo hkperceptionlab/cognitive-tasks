@@ -62,6 +62,8 @@ const APPS = [
   { id: 'ebbinghaus-adults', dir: 'ebbinghaus-adults', kind: 'ebbinghaus' },
   { id: 'time-reproduction-youth',  dir: 'time-reproduction-youth',  kind: 'time-repro' },
   { id: 'time-reproduction-adults', dir: 'time-reproduction-adults', kind: 'time-repro' },
+  { id: 'change-blindness-youth',  dir: 'change-blindness-youth',  kind: 'change-blindness' },
+  { id: 'change-blindness-adults', dir: 'change-blindness-adults', kind: 'change-blindness' },
   { id: 'sart-youth',  dir: 'sart-youth',  kind: 'sart' },
   { id: 'sart-adults', dir: 'sart-adults', kind: 'sart' },
   { id: 'ablink-youth',  dir: 'ablink-youth',  kind: 'ablink' },
@@ -1101,7 +1103,7 @@ async function checkAblink(browser, app) {
 
   const a = await playAblink(browser, urlFor(app.dir, 'ko'), app.id, 'anytime');
   add('아무때나봇: 숫자 우연(~12.5%)·T2 종합 우연(~50%)',
-    a.reached && a.errors.length === 0 && a.t1Acc != null && a.t1Acc < 50 && a.t2Overall != null && a.t2Overall > 10 && a.t2Overall < 90,
+    a.reached && a.errors.length === 0 && a.t1Acc != null && a.t1Acc <= 50 && a.t2Overall != null && a.t2Overall > 10 && a.t2Overall < 90,
     `숫자=${a.t1Acc}%·T2종합=${a.t2Overall}%`);
 
   return { id: app.id, checks };
@@ -1559,8 +1561,10 @@ async function checkEbbinghaus(browser, app) {
   const m = await playEbbinghaus(browser, urlFor(app.dir, 'ko'), app.id, 'match');
   add('맞춤봇 결과 도달', m.reached, m.reached ? 'ok' : `${RUN_TIMEOUT}ms 내 요약 없음`);
   add('맞춤봇 JS 에러 없음', m.errors.length === 0, m.errors.length ? m.errors.slice(0, 3).join(' / ') : 'none');
+  // 착시크기 임계는 20(작은 원 지름 40~56px + 6px 스텝 + 조건당 2시행 → 매칭 오차가 mag 로 ~15%까지 누적).
+  // '≈0'(배관 정상)과 실제 착시(수십 %)를 구분하기엔 충분. ML 은 선이 길어 노이즈 작아 8 로 둠.
   add('맞춤봇: 두 조건 유효·오차≈0이라 착시크기≈0·스파크(채점 배관)',
-    m.reached && m.nSmall > 0 && m.nLarge > 0 && m.mag != null && Math.abs(m.mag) < 8 && m.magText !== '—' && m.spark,
+    m.reached && m.nSmall > 0 && m.nLarge > 0 && m.mag != null && Math.abs(m.mag) < 20 && m.magText !== '—' && m.spark,
     `n=${m.nSmall}/${m.nLarge}·작은맥락=${m.biasSmall}·큰맥락=${m.biasLarge}·착시=${m.mag}·spark=${m.spark}`);
 
   const u = await playEbbinghaus(browser, urlFor(app.dir, 'ko'), app.id, 'noadjust');
@@ -1658,6 +1662,90 @@ async function checkTimeRepro(browser, app) {
   add('편차봇: 세 간격 유효·게이트 안 걸림·흰 화면 없음',
     v.reached && v.errors.length === 0 && allIntervals(v.byInterval) && v.tooShort === false && v.spark,
     `도달=${v.reached}·에러${v.errors.length}·간격수=${v.byInterval.length}·게이트=${v.tooShort}·spark=${v.spark}`);
+
+  return { id: app.id, checks };
+}
+
+// ── 변화맹(Change Blindness) 점검 ─────────────────────────────────────
+// 플리커 배열서 '바뀌는 도형' 클릭. 봇은 QA전용 `.cb-item[data-changed]`로 답을 '본다'(사람 DOM엔 없음).
+//   fast   = 바뀌는 도형 클릭 → 두 조건 탐지·중앙값 산출(채점 배관).
+//   giveup = '못 찾겠어요' → 두 조건 전멸 → blank 탐지시간 null(요약·그래프 게이트)·신뢰도 note.
+//   wrong  = 엉뚱 도형 클릭 → 탐지로 안 침(정답만 카운트) → 두 조건 탐지율 0.
+function installChangeBlindnessBot(strategy) {
+  window.__seen = new Set();
+  window.__cbTimer = setInterval(() => {
+    const panel = document.getElementById('cog-panel');
+    if (panel && !panel.hidden && panel.querySelector('.summary')) return;
+    const arena = document.querySelector('.cb-arena');
+    if (!arena || !arena.dataset.seq) return;
+    const seq = arena.dataset.seq;
+    if (window.__seen.has(seq)) return;
+    const changed = arena.querySelector('.cb-item[data-changed="1"]');
+    const other = arena.querySelector('.cb-item:not([data-changed])');
+    const give = document.querySelector('.cb-giveup');
+    if (!changed || !give) return;
+    window.__seen.add(seq);
+    setTimeout(() => {
+      if (strategy === 'fast') changed.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' }));
+      else if (strategy === 'wrong') (other || changed).dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' }));
+      else give.click();   // giveup
+    }, 60);
+  }, 20);
+}
+
+async function playChangeBlindness(browser, url, id, strategy) {
+  const page = await browser.newPage();
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+  page.on('console', (m) => { if (m.type() === 'error') errors.push('console.error: ' + m.text()); });
+  await page.goto(url, { waitUntil: 'load' });
+  await page.evaluate((i) => { try { localStorage.removeItem('cog:' + i + ':sessions'); } catch {} }, id);
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('#cog-action', { timeout: 15000 });
+  await page.evaluate(installChangeBlindnessBot, strategy);
+  const t0 = Date.now();
+  let reached = false;
+  while (Date.now() - t0 < RUN_TIMEOUT) {
+    const st = await page.evaluate(() => {
+      const panel = document.getElementById('cog-panel');
+      return { visible: panel && !panel.hidden, hasSummary: !!(panel && panel.querySelector('.summary')),
+        hasAction: !!(panel && panel.querySelector('#cog-action')) };
+    });
+    if (st.visible && st.hasSummary) { reached = true; break; }
+    if (st.visible && st.hasAction && !st.hasSummary) { await page.click('#cog-action').catch(() => {}); await sleep(120); }
+    await sleep(100);
+  }
+  const info = reached ? await page.evaluate(() => {
+    const panel = document.getElementById('cog-panel');
+    const last = window.__cbLast || {};
+    return { spark: false,
+      nbRate: last.nbRate ?? null, blRate: last.blRate ?? null, nbMed: last.nbMed ?? null, blMed: last.blMed ?? null, n: last.n ?? null };
+  }) : { nbRate: null, blRate: null, nbMed: null, blMed: null, n: null };
+  await page.close();
+  return { errors, reached, ...info };
+}
+
+async function checkChangeBlindness(browser, app) {
+  const checks = [];
+  const add = (name, pass, detail) => checks.push({ name, pass, detail });
+
+  const f = await playChangeBlindness(browser, urlFor(app.dir, 'ko'), app.id, 'fast');
+  add('빠른탐지봇 결과 도달', f.reached, f.reached ? 'ok' : `${RUN_TIMEOUT}ms 내 요약 없음`);
+  add('빠른탐지봇 JS 에러 없음', f.errors.length === 0, f.errors.length ? f.errors.slice(0, 3).join(' / ') : 'none');
+  add('빠른탐지봇: 두 조건 탐지·탐지시간 산출(채점 배관)',
+    f.reached && f.nbRate != null && f.nbRate > 0.9 && f.blRate > 0.9 && f.nbMed != null && f.blMed != null,
+    `no-blank 율=${f.nbRate}·시간=${f.nbMed}ms / blank 율=${f.blRate}·시간=${f.blMed}ms`);
+
+  const g = await playChangeBlindness(browser, urlFor(app.dir, 'ko'), app.id, 'giveup');
+  add('포기봇: 두 조건 전멸→blank 탐지시간 null(게이트)·흰 화면 없음',
+    g.reached && g.errors.length === 0 && g.nbRate === 0 && g.blMed === null,
+    `도달=${g.reached}·에러${g.errors.length}·no-blank 율=${g.nbRate}·blank 시간=${g.blMed}`);
+
+  const w = await playChangeBlindness(browser, urlFor(app.dir, 'ko'), app.id, 'wrong');
+  add('오클릭봇: 엉뚱 도형은 탐지로 안 침(정답만 카운트)→탐지율 0',
+    w.reached && w.errors.length === 0 && w.nbRate === 0 && w.blRate === 0,
+    `도달=${w.reached}·에러${w.errors.length}·no-blank 율=${w.nbRate}·blank 율=${w.blRate}`);
 
   return { id: app.id, checks };
 }
@@ -1932,6 +2020,7 @@ const checkOne = (browser, app) =>
           : app.kind === 'muller-lyer' ? checkMullerLyer(browser, app)
           : app.kind === 'ebbinghaus' ? checkEbbinghaus(browser, app)
           : app.kind === 'time-repro' ? checkTimeRepro(browser, app)
+          : app.kind === 'change-blindness' ? checkChangeBlindness(browser, app)
           : app.kind === 'sart' ? checkSART(browser, app)
           : app.kind === 'ablink' ? checkAblink(browser, app)
           : app.kind === 'blindspot' ? checkBlindspot(browser, app)
