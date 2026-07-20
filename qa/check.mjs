@@ -58,6 +58,8 @@ const APPS = [
   { id: 'vsearch-adults', dir: 'vsearch-adults', kind: 'vsearch' },
   { id: 'muller-lyer-youth',  dir: 'muller-lyer-youth',  kind: 'muller-lyer' },
   { id: 'muller-lyer-adults', dir: 'muller-lyer-adults', kind: 'muller-lyer' },
+  { id: 'ebbinghaus-youth',  dir: 'ebbinghaus-youth',  kind: 'ebbinghaus' },
+  { id: 'ebbinghaus-adults', dir: 'ebbinghaus-adults', kind: 'ebbinghaus' },
   { id: 'sart-youth',  dir: 'sart-youth',  kind: 'sart' },
   { id: 'sart-adults', dir: 'sart-adults', kind: 'sart' },
   { id: 'ablink-youth',  dir: 'ablink-youth',  kind: 'ablink' },
@@ -1475,6 +1477,103 @@ async function checkMullerLyer(browser, app) {
   return { id: app.id, checks };
 }
 
+// ── 에빙하우스 착시(조정법) 점검 ──────────────────────────────────────
+// 뮐러-라이어와 동형(조정법 오차채점). 봇은 window.__ebTrial 로 표준·비교 지름을 '본다'.
+//   match=지름 맞춰 오차≈0→착시크기≈0·값산출·스파크 / noadjust=바로확정→게이트 O·값은 산출
+//   / random=몇스텝만→두조건 유효·게이트 X·흰 화면 없음.
+function installEbbinghausBot(strategy) {
+  window.__seen = new Set();
+  window.__ebTimer = setInterval(() => {
+    const panel = document.getElementById('cog-panel');
+    if (panel && !panel.hidden && panel.querySelector('.summary')) return;
+    const st = window.__ebTrial;
+    const btns = [...document.querySelectorAll('.eb-controls .eb-btn')];
+    const btnSmall = btns[0], btnLarge = btns[1];
+    const btnConfirm = document.querySelector('.eb-confirm');
+    if (!st || !st.active || !btnSmall || !btnLarge || !btnConfirm) return;
+    if (window.__seen.has(st.seq)) return;
+    window.__seen.add(st.seq);
+    const press = (b) => {
+      b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' }));
+      b.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType: 'mouse' }));
+    };
+    (async () => {
+      if (strategy === 'match') {
+        let guard = 0;
+        while (st.active && Math.abs(st.compD - st.stdD) > 4 && guard < 120) {
+          press(st.stdD - st.compD > 0 ? btnLarge : btnSmall);
+          guard++;
+          await new Promise((r) => setTimeout(r, 0));
+        }
+      } else if (strategy === 'random') {
+        const n = 2 + Math.floor(Math.random() * 6), b = Math.random() < 0.5 ? btnSmall : btnLarge;
+        for (let i = 0; i < n; i++) press(b);
+      } // 'noadjust' → 조정 없이 바로 확정
+      if (st.active) btnConfirm.click();
+    })();
+  }, 20);
+}
+
+async function playEbbinghaus(browser, url, id, strategy) {
+  const page = await browser.newPage();
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+  page.on('console', (m) => { if (m.type() === 'error') errors.push('console.error: ' + m.text()); });
+  await page.goto(url, { waitUntil: 'load' });
+  await page.evaluate((i) => { try { localStorage.removeItem('cog:' + i + ':sessions'); } catch {} }, id);
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('#cog-action', { timeout: 15000 });
+  await page.evaluate(installEbbinghausBot, strategy);
+  const t0 = Date.now();
+  let reached = false;
+  while (Date.now() - t0 < RUN_TIMEOUT) {
+    const st = await page.evaluate(() => {
+      const panel = document.getElementById('cog-panel');
+      return { visible: panel && !panel.hidden, hasSummary: !!(panel && panel.querySelector('.summary')),
+        hasAction: !!(panel && panel.querySelector('#cog-action')) };
+    });
+    if (st.visible && st.hasSummary) { reached = true; break; }
+    if (st.visible && st.hasAction && !st.hasSummary) { await page.click('#cog-action').catch(() => {}); await sleep(120); }
+    await sleep(100);
+  }
+  const info = reached ? await page.evaluate(() => {
+    const panel = document.getElementById('cog-panel');
+    const row0 = panel.querySelector('.summary .row b');
+    const magText = row0 ? (row0.firstChild ? row0.firstChild.textContent : row0.textContent).trim() : '';
+    const last = window.__ebLast || {};
+    return { magText, spark: !!panel.querySelector('.perr-spark svg'),
+      biasSmall: last.biasSmall ?? null, biasLarge: last.biasLarge ?? null, mag: last.mag ?? null,
+      n: last.n ?? null, nSmall: last.nSmall ?? null, nLarge: last.nLarge ?? null, unadjusted: !!last.unadjusted };
+  }) : { magText: '', spark: false, biasSmall: null, biasLarge: null, mag: null, n: null, nSmall: null, nLarge: null, unadjusted: false };
+  await page.close();
+  return { errors, reached, ...info };
+}
+
+async function checkEbbinghaus(browser, app) {
+  const checks = [];
+  const add = (name, pass, detail) => checks.push({ name, pass, detail });
+
+  const m = await playEbbinghaus(browser, urlFor(app.dir, 'ko'), app.id, 'match');
+  add('맞춤봇 결과 도달', m.reached, m.reached ? 'ok' : `${RUN_TIMEOUT}ms 내 요약 없음`);
+  add('맞춤봇 JS 에러 없음', m.errors.length === 0, m.errors.length ? m.errors.slice(0, 3).join(' / ') : 'none');
+  add('맞춤봇: 두 조건 유효·오차≈0이라 착시크기≈0·스파크(채점 배관)',
+    m.reached && m.nSmall > 0 && m.nLarge > 0 && m.mag != null && Math.abs(m.mag) < 8 && m.magText !== '—' && m.spark,
+    `n=${m.nSmall}/${m.nLarge}·작은맥락=${m.biasSmall}·큰맥락=${m.biasLarge}·착시=${m.mag}·spark=${m.spark}`);
+
+  const u = await playEbbinghaus(browser, urlFor(app.dir, 'ko'), app.id, 'noadjust');
+  add('무조정봇: 순응 게이트 발동·그래도 값은 산출(오차 크기로는 안 걸림)',
+    u.reached && u.errors.length === 0 && u.unadjusted === true && u.mag != null,
+    `도달=${u.reached}·에러${u.errors.length}·게이트=${u.unadjusted}·착시=${u.mag}`);
+
+  const r = await playEbbinghaus(browser, urlFor(app.dir, 'ko'), app.id, 'random');
+  add('랜덤봇: 두 조건 유효·게이트 안 걸림·흰 화면 없음',
+    r.reached && r.errors.length === 0 && r.nSmall > 0 && r.nLarge > 0 && r.unadjusted === false && r.spark,
+    `도달=${r.reached}·에러${r.errors.length}·n=${r.nSmall}/${r.nLarge}·게이트=${r.unadjusted}·spark=${r.spark}`);
+
+  return { id: app.id, checks };
+}
+
 // ── 도형 회전(Mental Rotation) 점검 ────────────────────────────────────
 // 봇은 자극 글자의 transform 행렬식 부호로 거울상 여부를 '본다'(정답 노출 아님, 변환에서 읽음).
 //   correct    : 판별해 정확히 누름. 각도 무관 일정 지연 → 기울기≈0 (봇은 안 돌리니 이 과제의 대조군).
@@ -1743,6 +1842,7 @@ const checkOne = (browser, app) =>
           : app.kind === 'jnd' ? checkJnd(browser, app)
           : app.kind === 'vsearch' ? checkVSearch(browser, app)
           : app.kind === 'muller-lyer' ? checkMullerLyer(browser, app)
+          : app.kind === 'ebbinghaus' ? checkEbbinghaus(browser, app)
           : app.kind === 'sart' ? checkSART(browser, app)
           : app.kind === 'ablink' ? checkAblink(browser, app)
           : app.kind === 'blindspot' ? checkBlindspot(browser, app)

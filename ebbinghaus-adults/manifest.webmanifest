@@ -1,0 +1,20 @@
+{
+  "name": "주변이 바꾸는 크기 (성인)",
+  "short_name": "에빙하우스 성인",
+  "description": "같은 크기의 원도 주변을 둘러싼 원 크기에 따라 다르게 보이는 착시를, 오른쪽 원을 조절해 왼쪽 가운데 원과 같게 맞추며 재는 지각 과제. 결과는 기기를 떠나지 않습니다.",
+  "lang": "ko",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fafafa",
+  "theme_color": "#0E7C86",
+  "icons": [
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

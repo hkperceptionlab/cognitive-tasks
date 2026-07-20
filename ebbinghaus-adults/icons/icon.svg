@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="96" fill="#fafafa"/>
+  <g fill="#0E7C86">
+    <!-- 왼쪽: 작은 원들에 둘러싸인 가운데 원(커 보임) -->
+    <circle cx="170" cy="256" r="28"/>
+    <circle cx="170" cy="210" r="11"/><circle cx="210" cy="233" r="11"/><circle cx="210" cy="279" r="11"/>
+    <circle cx="170" cy="302" r="11"/><circle cx="130" cy="279" r="11"/><circle cx="130" cy="233" r="11"/>
+    <!-- 오른쪽: 큰 원들에 둘러싸인 같은 크기 가운데 원(작아 보임) -->
+    <circle cx="360" cy="256" r="28"/>
+    <circle cx="360" cy="176" r="38"/><circle cx="429" cy="216" r="38"/><circle cx="429" cy="296" r="38"/>
+    <circle cx="360" cy="336" r="38"/><circle cx="291" cy="296" r="38"/><circle cx="291" cy="216" r="38"/>
+  </g>
+</svg>
