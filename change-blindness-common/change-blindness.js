@@ -241,8 +241,8 @@ export function startChangeBlindness({ id, setsize, trialCap, scale = 1, accent 
 const STRINGS = {
   ko: {
     title: '보고도 놓치는 변화',
-    howto: '도형들이 깜빡이며 계속 나옵니다. 그중 <b>딱 하나</b>가 크기가 달라지길 반복합니다. 그 도형을 찾아 누르세요. 사이에 빈 화면이 끼면 놀랄 만큼 찾기 어렵습니다 — 그게 이 과제가 보여주려는 것입니다.',
-    ruleLine: '<b>바뀌는 도형</b>을 찾아 누르세요',
+    howto: '여러 도형 중 <b>딱 하나</b>가 <b>커졌다 작아졌다</b>를 반복합니다. 그 도형을 찾아 누르세요(터치·클릭). 도형들이 다 같이 깜빡이지만, 크기가 변하는 것은 하나뿐입니다. 사이에 빈 화면이 끼면 놀랄 만큼 찾기 어려워지는데 — 그게 이 과제가 보여주려는 것입니다.',
+    ruleLine: '<b>커졌다 작아졌다</b> 하는 도형을 누르세요',
     giveUp: '못 찾겠어요',
     fbOk: '✓ 맞았어요', fbNo: '✗ 그건 아니에요', fbMiss: '이번엔 못 찾았네요',
     rtNoblank: '바로 바뀔 때 탐지시간', rateNoblank: '바로 바뀔 때 탐지율',
@@ -255,8 +255,8 @@ const STRINGS = {
   },
   en: {
     title: 'The Change You Look Right Past',
-    howto: 'Shapes keep flashing on and off. <b>Just one</b> of them keeps changing size. Find it and tap it. When a blank screen slips in between, it becomes surprisingly hard to spot — that is what this task is about.',
-    ruleLine: 'Find and tap the <b>shape that changes</b>',
+    howto: 'One shape — <b>just one</b> — keeps <b>growing and shrinking</b>. Find it and tap it. All the shapes flash together, but only one changes size. When a blank screen slips in between, it becomes surprisingly hard to spot — that is what this task is about.',
+    ruleLine: 'Tap the shape that <b>grows and shrinks</b>',
     giveUp: 'Can’t find it',
     fbOk: '✓ That’s it', fbNo: '✗ Not that one', fbMiss: 'Missed it this time',
     rtNoblank: 'Detection time, no blank', rateNoblank: 'Detection rate, no blank',
@@ -269,8 +269,8 @@ const STRINGS = {
   },
   zh: {
     title: '看着也会漏掉的变化',
-    howto: '图形不断闪现。其中<b>只有一个</b>会反复改变大小。找到它并点击。当中间夹入空白画面时，会变得出奇地难找——这正是本任务要展示的。',
-    ruleLine: '找出并点击<b>会变化的图形</b>',
+    howto: '有<b>一个</b>图形会<b>忽大忽小</b>地反复变化。找到它并点击。所有图形一起闪烁，但只有一个会改变大小。当中间夹入空白画面时，会变得出奇地难找——这正是本任务要展示的。',
+    ruleLine: '点击<b>忽大忽小</b>的图形',
     giveUp: '找不到',
     fbOk: '✓ 就是它', fbNo: '✗ 不是这个', fbMiss: '这次没找到',
     rtNoblank: '无空白时探测时间', rateNoblank: '无空白时探测率',
@@ -283,8 +283,8 @@ const STRINGS = {
   },
   es: {
     title: 'El Cambio que Miras sin Ver',
-    howto: 'Las figuras parpadean sin parar. <b>Solo una</b> cambia de tamaño una y otra vez. Encuéntrala y tócala. Cuando entre una pantalla en blanco, se vuelve sorprendentemente difícil de detectar — de eso trata esta tarea.',
-    ruleLine: 'Encuentra y toca la <b>figura que cambia</b>',
+    howto: 'Una figura — <b>solo una</b> — se <b>agranda y encoge</b> una y otra vez. Encuéntrala y tócala. Todas las figuras parpadean juntas, pero solo una cambia de tamaño. Cuando entre una pantalla en blanco, se vuelve sorprendentemente difícil de detectar — de eso trata esta tarea.',
+    ruleLine: 'Toca la figura que <b>se agranda y encoge</b>',
     giveUp: 'No la encuentro',
     fbOk: '✓ Esa es', fbNo: '✗ Esa no', fbMiss: 'Esta vez no la viste',
     rtNoblank: 'Tiempo de detección, sin blanco', rateNoblank: 'Tasa de detección, sin blanco',
