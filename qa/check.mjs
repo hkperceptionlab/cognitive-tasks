@@ -78,6 +78,8 @@ const APPS = [
   { id: 'emo-dotprobe-adults', dir: 'emo-dotprobe-adults', kind: 'emo-dotprobe' },
   { id: 'breath-counting-youth',  dir: 'breath-counting-youth',  kind: 'breath' },
   { id: 'breath-counting-adults', dir: 'breath-counting-adults', kind: 'breath' },
+  { id: 'body-scan-youth',  dir: 'body-scan-youth',  kind: 'body-scan' },
+  { id: 'body-scan-adults', dir: 'body-scan-adults', kind: 'body-scan' },
 ];
 
 // 범위 지정: `node check.mjs`(전체) / `node check.mjs digitspan`(접두사 일치) / `node check.mjs stroop gonogo`.
@@ -2117,6 +2119,101 @@ async function checkBreath(browser, app) {
   return { id: app.id, checks };
 }
 
+// ── 바디스캔(body-scan) 점검 — 판정·자기보고 지표 없는 실천(체험) 과제. 그룹D 데모식 스모크 ──
+// 세션 중 조작은 음소거뿐이고 자동 진행이라, '부위가 순서대로 자동으로 바뀌며 완료까지 가는지'와
+// 'TTS 미지원/voice 없음 환경에서도 최소 시간만으로 폴백해 진행되는지'를 본다. 헤드리스 Chrome 은
+// 보통 매칭 언어 음성이 없어(speak()→false) 이 폴백 경로를 자연스럽게 검증한다.
+// ?qa=1 이면 각 부위 최소 시간이 대폭 축소돼 전체 세션이 ~2초에 끝난다(구조·UI 는 실제와 동일).
+async function checkBodyScan(browser, app) {
+  const checks = [];
+  const add = (n, p, d) => checks.push({ name: n, pass: p, detail: d });
+  const page = await browser.newPage();
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+  page.on('console', (m) => { if (m.type() === 'error') errors.push('console.error: ' + m.text()); });
+  await page.goto(urlFor(app.dir, 'ko'), { waitUntil: 'load' });
+  await sleep(150);
+  // 음성 목록이 로드될 때까지 잠깐 기다린다(비동기). 이래야 '음성 존재 + headless onend 미발화' =
+  // 실제 위험 경로(TTS_CAP_MS 안전장치가 없으면 멈춤)가 결정론적으로 테스트된다. 예전엔 음성 로드 전
+  // 클릭해 우연히 텍스트 폴백으로 통과했다(비결정적). 음성이 아예 없는 환경도 setTimeout 으로 계속 진행.
+  await page.evaluate(() => new Promise((r) => {
+    try {
+      if ((speechSynthesis.getVoices() || []).length) return r();
+      speechSynthesis.addEventListener('voiceschanged', () => r(), { once: true });
+      setTimeout(r, 1500);
+    } catch { r(); }
+  }));
+
+  // 1) 인트로 로드 + 언어버튼 4 + 시작 버튼
+  const intro = await page.evaluate(() => ({
+    instr: ((document.querySelector('.bs-instruction') || {}).textContent || '').length,
+    start: !!document.querySelector('[data-act="toLength"]'),
+    langs: document.querySelectorAll('.langbtn').length,
+  }));
+  add('인트로 로드·안내문·시작 버튼', intro.instr > 20 && intro.start, JSON.stringify(intro));
+  add('언어 버튼 4개', intro.langs === 4, `langbtn=${intro.langs}`);
+
+  // 2) 시작 → 길이 선택(3) → 첫 길이 선택 → 세션 화면
+  await page.click('[data-act="toLength"]').catch(() => {});
+  await sleep(80);
+  const lens = await page.evaluate(() => document.querySelectorAll('.bs-len').length);
+  add('세션 길이 선택 3개', lens === 3, `bs-len=${lens}`);
+  await page.click('.bs-len').catch(() => {});
+  await sleep(80);
+  const sess = await page.evaluate(() => ({
+    sil: !!document.querySelector('.bsil'),
+    regions: document.querySelectorAll('.bsil-region').length,
+    guide: !!document.querySelector('.bs-guide'),
+    progress: !!document.querySelector('.bs-progress-fill'),
+    mute: !!document.querySelector('[data-act="mute"]'),
+    langbtns: document.querySelectorAll('.langbtn').length,
+  }));
+  add('세션: 실루엣(13부위)·안내텍스트·진행바·음소거·언어바숨김',
+    sess.sil && sess.regions === 13 && sess.guide && sess.progress && sess.mute && sess.langbtns === 0, JSON.stringify(sess));
+
+  // 3) 음소거 토글 동작(누르면 aria-pressed·아이콘 전환 — cancel 은 headless 서 무해, 진행은 계속)
+  await page.click('[data-act="mute"]').catch(() => {});
+  const mute = await page.evaluate(() => {
+    const m = document.querySelector('[data-act="mute"]');
+    return { pressed: m ? m.getAttribute('aria-pressed') : null, icon: m ? m.textContent : '' };
+  });
+  add('음소거 토글 동작(aria-pressed·아이콘 전환)', mute.pressed === 'true' && mute.icon === '🔇', JSON.stringify(mute));
+
+  // 4) 부위가 순서대로 자동 진행하며 완료까지(폴링으로 강조 부위·안내텍스트 변화 수집)
+  const t0 = Date.now();
+  const singleParts = new Set();  // 단일 부위 강조(부위 1개만 on)
+  const guides = new Set();
+  let sawWhole = false, doneReached = false;
+  while (Date.now() - t0 < 8000) {
+    const st = await page.evaluate(() => {
+      const on = [...document.querySelectorAll('.bsil-region.on')].map((g) => g.dataset.part);
+      const g = (document.querySelector('.bs-guide') || {}).textContent || '';
+      return { on, guide: g, done: !!document.querySelector('.bs-facts') };
+    });
+    if (st.guide) guides.add(st.guide);
+    if (st.on.length === 1) singleParts.add(st.on[0]);
+    if (st.on.length >= 10) sawWhole = true;         // '온몸 전체'(ALL) = 모든 부위 강조
+    if (st.done) { doneReached = true; break; }
+    await sleep(50);
+  }
+  add('부위 순서대로 자동 진행(음성 로드됨→onend 미발화 시 TTS_CAP 상한으로 진행)',
+    singleParts.size >= 5 && singleParts.has('feet') && sawWhole && guides.size >= 5,
+    `단일부위 ${singleParts.size}종·feet=${singleParts.has('feet')}·온몸=${sawWhole}·안내문 ${guides.size}종`);
+
+  // 5) 자동 종료 → 완료 화면(총 시간·다녀온 부위 14)
+  const done = await page.evaluate(() => {
+    const facts = document.querySelector('.bs-facts');
+    return { reached: !!facts, restart: !!document.querySelector('[data-act="restart"]'),
+      vals: facts ? [...facts.querySelectorAll('.row b')].map((b) => b.textContent.trim()) : [] };
+  });
+  add('자동 종료→완료 화면(총 시간·다녀온 부위 14)',
+    doneReached && done.reached && done.restart && done.vals.length === 2 && done.vals[1] === '14', JSON.stringify(done.vals));
+  add('JS 에러 없음', errors.length === 0, errors.length ? errors.slice(0, 3).join(' / ') : 'none');
+  await page.close();
+  return { id: app.id, checks };
+}
+
 // ── 실행 ─────────────────────────────────────────────────────────────
 if (SELECTED.length === 0) {
   console.error(`일치하는 앱이 없습니다: "${ARGS.join(' ')}". 예: digitspan / stroop gonogo / corsi-youth`);
@@ -2146,6 +2243,7 @@ const checkOne = (browser, app) =>
           : app.kind === 'emo-stroop' ? checkEmoStroop(browser, app)
           : app.kind === 'emo-dotprobe' ? checkEmoDotprobe(browser, app)
           : app.kind === 'breath' ? checkBreath(browser, app)
+          : app.kind === 'body-scan' ? checkBodyScan(browser, app)
             : checkApp(browser, app);
 
 const server = await startServer();

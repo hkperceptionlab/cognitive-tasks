@@ -10,8 +10,9 @@ adults and support for four languages. There
 are also standalone perception demos (experiences, not timed tasks): a
 blind-spot demo, a Necker-cube (bistable perception) demo, a negative-
 afterimage demo, and an inattentional-blindness demo. A new **practice**
-series adds guided experiences rather than measurements — starting with a
-breath-counting practice (Levinson 2014).
+series adds guided experiences rather than measurements — a breath-counting
+practice (Levinson 2014) and a body-scan meditation (with optional voice
+guidance).
 
 This is a **demonstration** tool, not a training program. It makes no promise of
 improving cognitive ability — the point is simply to let people experience how
@@ -59,3 +60,5 @@ Built by a high school student, with coding help from an AI tool (Claude Code).
 - [Inattentional-blindness demo](./inattentional-blindness/)
 - [Breath counting (practice) — Youth](./breath-counting-youth/)
 - [Breath counting (practice) — Adults](./breath-counting-adults/)
+- [Body scan (practice) — Youth](./body-scan-youth/)
+- [Body scan (practice) — Adults](./body-scan-adults/)

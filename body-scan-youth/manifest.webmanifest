@@ -1,0 +1,20 @@
+{
+  "name": "바디스캔 (청소년)",
+  "short_name": "바디스캔",
+  "description": "몸의 각 부위에 차례로 주의를 옮기며 감각을 알아차리는 바디스캔 명상. 검사가 아니라 체험이며, 아무 기록도 기기를 떠나지 않습니다.",
+  "lang": "ko",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fafafa",
+  "theme_color": "#56805A",
+  "icons": [
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
