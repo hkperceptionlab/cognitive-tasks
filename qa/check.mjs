@@ -60,6 +60,8 @@ const APPS = [
   { id: 'muller-lyer-adults', dir: 'muller-lyer-adults', kind: 'muller-lyer' },
   { id: 'ebbinghaus-youth',  dir: 'ebbinghaus-youth',  kind: 'ebbinghaus' },
   { id: 'ebbinghaus-adults', dir: 'ebbinghaus-adults', kind: 'ebbinghaus' },
+  { id: 'time-reproduction-youth',  dir: 'time-reproduction-youth',  kind: 'time-repro' },
+  { id: 'time-reproduction-adults', dir: 'time-reproduction-adults', kind: 'time-repro' },
   { id: 'sart-youth',  dir: 'sart-youth',  kind: 'sart' },
   { id: 'sart-adults', dir: 'sart-adults', kind: 'sart' },
   { id: 'ablink-youth',  dir: 'ablink-youth',  kind: 'ablink' },
@@ -1574,6 +1576,92 @@ async function checkEbbinghaus(browser, app) {
   return { id: app.id, checks };
 }
 
+// ── 시간재현(Time reproduction) 점검 ──────────────────────────────────
+// 조정 아님 — 재현(누르고 있기). 봇은 window.__trTrial(stage='reproduce'·intervalMs)을 보고
+// hold 버튼을 누른 뒤 목표만큼 지나 뗀다(window pointerup). QA 간격은 [400,800,1200]ms 축약.
+//   match    = intervalMs 만큼 홀드 → 오차≈0·세 간격 유효·스파크(채점 배관).
+//   tooshort = 즉시 뗌(30ms) → 순응 게이트 O·그래도 값 산출(오차 크기로는 안 걸림).
+//   vary     = 0.8~1.4배 홀드 → 세 간격 유효·게이트 X·흰 화면 없음.
+function installTimeReproBot(strategy) {
+  window.__seen = new Set();
+  window.__trTimer = setInterval(() => {
+    const panel = document.getElementById('cog-panel');
+    if (panel && !panel.hidden && panel.querySelector('.summary')) return;
+    const st = window.__trTrial;
+    const btn = document.querySelector('.tr-hold');
+    if (!st || !st.active || st.stage !== 'reproduce' || !btn) return;
+    if (window.__seen.has(st.seq)) return;
+    window.__seen.add(st.seq);
+    const target = st.intervalMs;
+    const hold = strategy === 'match' ? target
+      : strategy === 'tooshort' ? 30
+      : Math.round(target * (0.8 + Math.random() * 0.6));   // vary 0.8~1.4x (최소 320ms > 즉시뗌 임계)
+    btn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' }));
+    setTimeout(() => window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType: 'mouse' })), hold);
+  }, 20);
+}
+
+async function playTimeRepro(browser, url, id, strategy) {
+  const page = await browser.newPage();
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+  page.on('console', (m) => { if (m.type() === 'error') errors.push('console.error: ' + m.text()); });
+  await page.goto(url, { waitUntil: 'load' });
+  await page.evaluate((i) => { try { localStorage.removeItem('cog:' + i + ':sessions'); } catch {} }, id);
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('#cog-action', { timeout: 15000 });
+  await page.evaluate(installTimeReproBot, strategy);
+  const t0 = Date.now();
+  let reached = false;
+  while (Date.now() - t0 < RUN_TIMEOUT) {
+    const st = await page.evaluate(() => {
+      const panel = document.getElementById('cog-panel');
+      return { visible: panel && !panel.hidden, hasSummary: !!(panel && panel.querySelector('.summary')),
+        hasAction: !!(panel && panel.querySelector('#cog-action')) };
+    });
+    if (st.visible && st.hasSummary) { reached = true; break; }
+    if (st.visible && st.hasAction && !st.hasSummary) { await page.click('#cog-action').catch(() => {}); await sleep(120); }
+    await sleep(100);
+  }
+  const info = reached ? await page.evaluate(() => {
+    const panel = document.getElementById('cog-panel');
+    const row0 = panel.querySelector('.summary .row b');
+    const magText = row0 ? (row0.firstChild ? row0.firstChild.textContent : row0.textContent).trim() : '';
+    const last = window.__trLast || {};
+    return { magText, spark: !!panel.querySelector('.perr-spark svg'),
+      overall: last.overall ?? null, n: last.n ?? null, tooShort: !!last.tooShort,
+      byInterval: last.byInterval || [] };
+  }) : { magText: '', spark: false, overall: null, n: null, tooShort: false, byInterval: [] };
+  await page.close();
+  return { errors, reached, ...info };
+}
+
+async function checkTimeRepro(browser, app) {
+  const checks = [];
+  const add = (name, pass, detail) => checks.push({ name, pass, detail });
+  const allIntervals = (bi) => bi.length === 3 && bi.every((b) => b.n > 0);
+
+  const m = await playTimeRepro(browser, urlFor(app.dir, 'ko'), app.id, 'match');
+  add('맞춤봇 결과 도달', m.reached, m.reached ? 'ok' : `${RUN_TIMEOUT}ms 내 요약 없음`);
+  add('맞춤봇 JS 에러 없음', m.errors.length === 0, m.errors.length ? m.errors.slice(0, 3).join(' / ') : 'none');
+  add('맞춤봇: 세 간격 유효·재현≈실제라 오차≈0·스파크(채점 배관)',
+    m.reached && allIntervals(m.byInterval) && m.overall != null && Math.abs(m.overall) < 20 && m.magText !== '—' && m.spark && m.tooShort === false,
+    `간격=${m.byInterval.map((b) => b.ms + ':' + b.mean + '%(' + b.n + ')').join(' ')}·전체=${m.overall}·spark=${m.spark}`);
+
+  const u = await playTimeRepro(browser, urlFor(app.dir, 'ko'), app.id, 'tooshort');
+  add('즉시뗌봇: 순응 게이트 발동·그래도 값은 산출(오차 크기로는 안 걸림)',
+    u.reached && u.errors.length === 0 && u.tooShort === true && u.overall != null,
+    `도달=${u.reached}·에러${u.errors.length}·게이트=${u.tooShort}·전체=${u.overall}`);
+
+  const v = await playTimeRepro(browser, urlFor(app.dir, 'ko'), app.id, 'vary');
+  add('편차봇: 세 간격 유효·게이트 안 걸림·흰 화면 없음',
+    v.reached && v.errors.length === 0 && allIntervals(v.byInterval) && v.tooShort === false && v.spark,
+    `도달=${v.reached}·에러${v.errors.length}·간격수=${v.byInterval.length}·게이트=${v.tooShort}·spark=${v.spark}`);
+
+  return { id: app.id, checks };
+}
+
 // ── 도형 회전(Mental Rotation) 점검 ────────────────────────────────────
 // 봇은 자극 글자의 transform 행렬식 부호로 거울상 여부를 '본다'(정답 노출 아님, 변환에서 읽음).
 //   correct    : 판별해 정확히 누름. 각도 무관 일정 지연 → 기울기≈0 (봇은 안 돌리니 이 과제의 대조군).
@@ -1843,6 +1931,7 @@ const checkOne = (browser, app) =>
           : app.kind === 'vsearch' ? checkVSearch(browser, app)
           : app.kind === 'muller-lyer' ? checkMullerLyer(browser, app)
           : app.kind === 'ebbinghaus' ? checkEbbinghaus(browser, app)
+          : app.kind === 'time-repro' ? checkTimeRepro(browser, app)
           : app.kind === 'sart' ? checkSART(browser, app)
           : app.kind === 'ablink' ? checkAblink(browser, app)
           : app.kind === 'blindspot' ? checkBlindspot(browser, app)
