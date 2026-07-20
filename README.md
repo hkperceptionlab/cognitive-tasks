@@ -9,7 +9,9 @@ task, and an emotional dot-probe task — each with separate versions for youth 
 adults and support for four languages. There
 are also standalone perception demos (experiences, not timed tasks): a
 blind-spot demo, a Necker-cube (bistable perception) demo, a negative-
-afterimage demo, and an inattentional-blindness demo.
+afterimage demo, and an inattentional-blindness demo. A new **practice**
+series adds guided experiences rather than measurements — starting with a
+breath-counting practice (Levinson 2014).
 
 This is a **demonstration** tool, not a training program. It makes no promise of
 improving cognitive ability — the point is simply to let people experience how
@@ -55,3 +57,5 @@ Built by a high school student, with coding help from an AI tool (Claude Code).
 - [Necker-cube demo](./necker-cube/)
 - [Afterimage demo](./afterimage/)
 - [Inattentional-blindness demo](./inattentional-blindness/)
+- [Breath counting (practice) — Youth](./breath-counting-youth/)
+- [Breath counting (practice) — Adults](./breath-counting-adults/)

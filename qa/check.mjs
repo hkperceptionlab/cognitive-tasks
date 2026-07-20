@@ -76,6 +76,8 @@ const APPS = [
   { id: 'emo-stroop-adults', dir: 'emo-stroop-adults', kind: 'emo-stroop' },
   { id: 'emo-dotprobe-youth',  dir: 'emo-dotprobe-youth',  kind: 'emo-dotprobe' },
   { id: 'emo-dotprobe-adults', dir: 'emo-dotprobe-adults', kind: 'emo-dotprobe' },
+  { id: 'breath-counting-youth',  dir: 'breath-counting-youth',  kind: 'breath' },
+  { id: 'breath-counting-adults', dir: 'breath-counting-adults', kind: 'breath' },
 ];
 
 // 범위 지정: `node check.mjs`(전체) / `node check.mjs digitspan`(접두사 일치) / `node check.mjs stroop gonogo`.
@@ -2001,6 +2003,120 @@ async function checkNback(browser, app) {
   return { id: app.id, checks };
 }
 
+// ── 호흡 세기(breath-counting) 점검 — 판정 없는 실천(체험) 과제. 그룹D 데모식 스모크 + 실제 상호작용 ──
+// 정답/오답이 없어 정답봇·오답봇 개념이 성립하지 않는다. 대신 흐름·상호작용만 실측한다:
+//   로드 → 언어버튼 4개 → 시작→길이선택 → 세션(볼·타이머·큰 터치존·놓침) → 터치존 탭 시 사이클 수+물결 →
+//   '놓쳤어요' 클릭 시 시점 기록(완료 사이클 수는 안 깎임) → 타이머 자동 종료 →
+//   완료 화면(시간·사이클 수·놓침 횟수 3행 + 2-레인 스파크라인) → JS 에러 0.
+// ?qa=1 이면 세션 길이가 2.2초로 축약돼 자동 종료를 빠르게 검증한다(UI·상호작용은 실제와 동일).
+async function checkBreath(browser, app) {
+  const checks = [];
+  const add = (n, p, d) => checks.push({ name: n, pass: p, detail: d });
+  const page = await browser.newPage();
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+  page.on('console', (m) => { if (m.type() === 'error') errors.push('console.error: ' + m.text()); });
+  await page.goto(urlFor(app.dir, 'ko'), { waitUntil: 'load' });
+  await sleep(150);
+
+  // 1) 인트로 로드 + 언어버튼 4개 + 시작 버튼
+  const intro = await page.evaluate(() => ({
+    instr: ((document.querySelector('.bc-instruction') || {}).textContent || '').length,
+    start: !!document.querySelector('[data-act="toLength"]'),
+    langs: document.querySelectorAll('.langbtn').length,
+  }));
+  add('인트로 로드·안내문·시작 버튼', intro.instr > 20 && intro.start, JSON.stringify(intro));
+  add('언어 버튼 4개', intro.langs === 4, `langbtn=${intro.langs}`);
+
+  // 2) 시작 → 길이 선택(3개) → 첫 길이 선택 → 세션 화면(볼·타이머·좌우·놓침)
+  await page.click('[data-act="toLength"]').catch(() => {});
+  await sleep(80);
+  const lens = await page.evaluate(() => document.querySelectorAll('.bc-len').length);
+  add('세션 길이 선택 3개', lens === 3, `bc-len=${lens}`);
+  await page.click('.bc-len').catch(() => {});
+  await sleep(80);
+  const sess = await page.evaluate(() => {
+    const zone = document.querySelector('[data-act="cycle"]');
+    return {
+      bowl: !!document.querySelector('.bc-bowl'),
+      timer: ((document.querySelector('.bc-timer') || {}).textContent || ''),
+      zone: !!zone,
+      zoneAria: zone ? (zone.getAttribute('aria-label') || '').length : 0,
+      caught: !!document.querySelector('[data-act="caught"]'),
+      noLeftRight: !document.querySelector('[data-act="left"]') && !document.querySelector('[data-act="right"]'),
+      count: ((document.querySelector('.bc-count') || {}).textContent || ''),
+    };
+  });
+  add('세션 화면: 싱잉볼·타이머·큰 터치존(aria)·놓침 버튼(좌우 제거)',
+    sess.bowl && /^\d+:\d\d$/.test(sess.timer) && sess.zone && sess.zoneAria > 10 && sess.caught && sess.noLeftRight, JSON.stringify(sess));
+
+  // 2b) 세션 화면: 언어바 숨김 + 음소거 토글(기본 소리 켜짐 🔔) 존재, 클릭 시 aria-pressed·아이콘 전환
+  const muteBefore = await page.evaluate(() => {
+    const m = document.querySelector('[data-act="mute"]');
+    return { present: !!m, pressed: m ? m.getAttribute('aria-pressed') : null,
+      icon: m ? m.textContent : '', langbtns: document.querySelectorAll('.langbtn').length };
+  });
+  add('세션: 언어바 숨김·음소거 토글(기본 켜짐)',
+    muteBefore.present && muteBefore.pressed === 'false' && muteBefore.langbtns === 0, JSON.stringify(muteBefore));
+  await page.click('[data-act="mute"]').catch(() => {});
+  const muteAfter = await page.evaluate(() => {
+    const m = document.querySelector('[data-act="mute"]');
+    return { pressed: m ? m.getAttribute('aria-pressed') : null, icon: m ? m.textContent : '' };
+  });
+  add('음소거 토글 동작(aria-pressed·아이콘 전환)',
+    muteAfter.pressed === 'true' && muteAfter.icon === '🔇', JSON.stringify(muteAfter));
+
+  // 3) 타이머가 실제로 카운트다운하는가(잠깐 뒤 값이 줄어듦)
+  const t1 = await page.evaluate(() => (document.querySelector('.bc-timer') || {}).textContent || '');
+  await sleep(1100);
+  const t2 = await page.evaluate(() => (document.querySelector('.bc-timer') || {}).textContent || '');
+  add('타이머 카운트다운 동작', !!t1 && !!t2 && t1 !== t2, `${t1} → ${t2}`);
+
+  // 4) 큰 터치존 탭 → 사이클 수 증가 + 물결(.bc-ripple, 싱잉볼 중심에서) 생성
+  await page.click('[data-act="cycle"]').catch(() => {});
+  const afterTap = await page.evaluate(() => ({
+    count: (document.querySelector('.bc-count') || {}).textContent || '',
+    ripples: document.querySelectorAll('.bc-ripple').length,
+  }));
+  add('터치존 탭→사이클 수 갱신·싱잉볼 물결 생성', afterTap.count === '1' && afterTap.ripples >= 1, JSON.stringify(afterTap));
+
+  // 5) '놓쳤어요' → 시점만 기록. 완료 사이클 수는 안 깎임(승인된 동작). 판정 없음.
+  await page.click('[data-act="cycle"]').catch(() => {}); // 사이클 2로 올려두고
+  await page.click('[data-act="caught"]').catch(() => {}); // 놓침(완료 사이클 수는 유지)
+  const afterCaught = await page.evaluate(() => (document.querySelector('.bc-count') || {}).textContent || '');
+  add('‘놓쳤어요’→완료 사이클 수 유지(안 깎임)', afterCaught === '2', `count=${afterCaught}`);
+
+  // 6) 타이머 자동 종료 → 완료 화면(시간·사이클 수·놓침 횟수 3행). '결과'가 아니라 사실 표시.
+  const t0 = Date.now();
+  let done = null;
+  while (Date.now() - t0 < 8000) {
+    done = await page.evaluate(() => {
+      const facts = document.querySelector('.bc-facts');
+      if (!facts) return null;
+      const vals = [...facts.querySelectorAll('.row b')].map((b) => b.textContent.trim());
+      return { restart: !!document.querySelector('[data-act="restart"]'), vals };
+    });
+    if (done) break;
+    await sleep(150);
+  }
+  add('타이머 자동 종료→완료 화면(시간·사이클 수·놓침 횟수)',
+    !!done && done.restart && done.vals.length === 3 && done.vals[1] === '2' && done.vals[2] === '1',
+    done ? JSON.stringify(done.vals) : '완료화면 미도달');
+
+  // 6b) 완료 화면 2-레인 스파크라인(사이클 위·놓침 아래) + 범례 2개
+  const sparkInfo = await page.evaluate(() => {
+    const svg = document.querySelector('.bc-spark');
+    return { svg: !!svg, lines: svg ? svg.querySelectorAll('line').length : 0,
+      legend: document.querySelectorAll('.bc-sparklegend span').length };
+  });
+  add('완료: 2-레인 스파크라인·범례 2개', sparkInfo.svg && sparkInfo.lines >= 3 && sparkInfo.legend === 2, JSON.stringify(sparkInfo));
+
+  add('JS 에러 없음', errors.length === 0, errors.length ? errors.slice(0, 3).join(' / ') : 'none');
+  await page.close();
+  return { id: app.id, checks };
+}
+
 // ── 실행 ─────────────────────────────────────────────────────────────
 if (SELECTED.length === 0) {
   console.error(`일치하는 앱이 없습니다: "${ARGS.join(' ')}". 예: digitspan / stroop gonogo / corsi-youth`);
@@ -2029,6 +2145,7 @@ const checkOne = (browser, app) =>
           : app.kind === 'ib' ? checkIb(browser, app)
           : app.kind === 'emo-stroop' ? checkEmoStroop(browser, app)
           : app.kind === 'emo-dotprobe' ? checkEmoDotprobe(browser, app)
+          : app.kind === 'breath' ? checkBreath(browser, app)
             : checkApp(browser, app);
 
 const server = await startServer();

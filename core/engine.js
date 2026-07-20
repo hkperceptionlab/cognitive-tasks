@@ -57,6 +57,9 @@ const FAMILY_COLORS = {
   spatial: '#A04A15',    // 도형 회전 등 공간 변형 (번트 오렌지, 대비 6.0:1)
   perception: '#0E7C86', // 변별 역치 등 지각 (청록, 흰 배경 대비 4.95:1)
   mindfulness: '#5C4A73', // 무심코 누르는 순간(SART) 등 (차분한 자보라, 흰 배경 대비 7.83:1)
+  practice: '#4A6B4D',   // 실천 계열(호흡세기 등). 세이지그린, 흰 텍스트 대비 6.0:1(AA).
+                         // 실천 계열은 runTask를 안 쓰는 체험 도구라 이 값을 계열 기준(성인 톤)으로만 참조하고,
+                         // 청소년 앱은 밝은 변형 #56805A(대비 4.6:1)를 자기 셸에서 쓴다.
 };
 const DEFAULT_ACCENT = FAMILY_COLORS.inhibition;
 
