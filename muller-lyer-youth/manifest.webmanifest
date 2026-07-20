@@ -1,0 +1,20 @@
+{
+  "name": "화살표가 바꾸는 길이 (청소년)",
+  "short_name": "뮐러라이어 청소년",
+  "description": "같은 길이의 선도 양끝 화살표 방향에 따라 다르게 보이는 착시를, 아래 선을 조절해 위 선과 같게 맞추며 재는 지각 과제. 결과는 기기를 떠나지 않습니다.",
+  "lang": "ko",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fafafa",
+  "theme_color": "#0E7C86",
+  "icons": [
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

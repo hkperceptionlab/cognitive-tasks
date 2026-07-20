@@ -56,6 +56,8 @@ const APPS = [
   { id: 'jnd-adults', dir: 'jnd-adults', kind: 'jnd' },
   { id: 'vsearch-youth',  dir: 'vsearch-youth',  kind: 'vsearch' },
   { id: 'vsearch-adults', dir: 'vsearch-adults', kind: 'vsearch' },
+  { id: 'muller-lyer-youth',  dir: 'muller-lyer-youth',  kind: 'muller-lyer' },
+  { id: 'muller-lyer-adults', dir: 'muller-lyer-adults', kind: 'muller-lyer' },
   { id: 'sart-youth',  dir: 'sart-youth',  kind: 'sart' },
   { id: 'sart-adults', dir: 'sart-adults', kind: 'sart' },
   { id: 'ablink-youth',  dir: 'ablink-youth',  kind: 'ablink' },
@@ -1374,6 +1376,105 @@ async function checkJnd(browser, app) {
   return { id: app.id, checks };
 }
 
+// ── 뮐러-라이어 착시(조정법) 점검 ──────────────────────────────────────
+// 정답이 없는 조정 과제(오차 채점). 봇은 window.__mlTrial 로 표준·비교 길이를 '본다'(사람도 화면에서 봄).
+//   match    : 비교선을 표준 실제 길이로 맞춰 오차≈0 → 착시크기(mag)≈0, 값 산출·스파크 확인(채점 배관 검증).
+//   noadjust : 조정 없이 바로 확정 → nAdjust=0 과반 → 순응 게이트 note. 단 값(mag)은 여전히 산출
+//              (게이트는 '조정 이행'에만, 오차 크기로는 안 걸림 — 지시 §0-3 불변식).
+//   random   : 몇 스텝만 조정 후 확정 → 두 조건 유효·게이트 안 걸림·흰 화면 없음.
+function installMullerLyerBot(strategy) {
+  window.__seen = new Set();
+  window.__mlTimer = setInterval(() => {
+    const panel = document.getElementById('cog-panel');
+    if (panel && !panel.hidden && panel.querySelector('.summary')) return;   // 결과 도달
+    const st = window.__mlTrial;
+    const btns = [...document.querySelectorAll('.ml-controls .ml-btn')];
+    const btnShort = btns[0], btnLong = btns[1];
+    const btnConfirm = document.querySelector('.ml-confirm');
+    if (!st || !st.active || !btnShort || !btnLong || !btnConfirm) return;
+    if (window.__seen.has(st.seq)) return;
+    window.__seen.add(st.seq);
+    const press = (b) => {
+      b.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' }));
+      b.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType: 'mouse' }));
+    };
+    (async () => {
+      if (strategy === 'match') {
+        let guard = 0;
+        while (st.active && Math.abs(st.compLen - st.stdLen) > 4 && guard < 120) {
+          press(st.stdLen - st.compLen > 0 ? btnLong : btnShort);
+          guard++;
+          await new Promise((r) => setTimeout(r, 0));
+        }
+      } else if (strategy === 'random') {
+        const n = 2 + Math.floor(Math.random() * 6), b = Math.random() < 0.5 ? btnShort : btnLong;
+        for (let i = 0; i < n; i++) press(b);
+      } // 'noadjust' → 조정 없이 바로 확정
+      if (st.active) btnConfirm.click();
+    })();
+  }, 20);
+}
+
+async function playMullerLyer(browser, url, id, strategy) {
+  const page = await browser.newPage();
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+  page.on('console', (m) => { if (m.type() === 'error') errors.push('console.error: ' + m.text()); });
+  await page.goto(url, { waitUntil: 'load' });
+  await page.evaluate((i) => { try { localStorage.removeItem('cog:' + i + ':sessions'); } catch {} }, id);
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('#cog-action', { timeout: 15000 });
+  await page.evaluate(installMullerLyerBot, strategy);
+  const t0 = Date.now();
+  let reached = false;
+  while (Date.now() - t0 < RUN_TIMEOUT) {
+    const st = await page.evaluate(() => {
+      const panel = document.getElementById('cog-panel');
+      return { visible: panel && !panel.hidden, hasSummary: !!(panel && panel.querySelector('.summary')),
+        hasAction: !!(panel && panel.querySelector('#cog-action')) };
+    });
+    if (st.visible && st.hasSummary) { reached = true; break; }
+    if (st.visible && st.hasAction && !st.hasSummary) { await page.click('#cog-action').catch(() => {}); await sleep(120); }
+    await sleep(100);
+  }
+  const info = reached ? await page.evaluate(() => {
+    const panel = document.getElementById('cog-panel');
+    const row0 = panel.querySelector('.summary .row b');
+    const magText = row0 ? (row0.firstChild ? row0.firstChild.textContent : row0.textContent).trim() : '';
+    const last = window.__mlLast || {};
+    return { magText, spark: !!panel.querySelector('.perr-spark svg'),
+      biasLong: last.biasLong ?? null, biasShort: last.biasShort ?? null, mag: last.mag ?? null,
+      n: last.n ?? null, nLong: last.nLong ?? null, nShort: last.nShort ?? null, unadjusted: !!last.unadjusted };
+  }) : { magText: '', spark: false, biasLong: null, biasShort: null, mag: null, n: null, nLong: null, nShort: null, unadjusted: false };
+  await page.close();
+  return { errors, reached, ...info };
+}
+
+async function checkMullerLyer(browser, app) {
+  const checks = [];
+  const add = (name, pass, detail) => checks.push({ name, pass, detail });
+
+  const m = await playMullerLyer(browser, urlFor(app.dir, 'ko'), app.id, 'match');
+  add('맞춤봇 결과 도달', m.reached, m.reached ? 'ok' : `${RUN_TIMEOUT}ms 내 요약 없음`);
+  add('맞춤봇 JS 에러 없음', m.errors.length === 0, m.errors.length ? m.errors.slice(0, 3).join(' / ') : 'none');
+  add('맞춤봇: 두 조건 유효·오차≈0이라 착시크기≈0·스파크(채점 배관)',
+    m.reached && m.nLong > 0 && m.nShort > 0 && m.mag != null && Math.abs(m.mag) < 8 && m.magText !== '—' && m.spark,
+    `n=${m.nLong}/${m.nShort}·바깥=${m.biasLong}·안쪽=${m.biasShort}·착시=${m.mag}·spark=${m.spark}`);
+
+  const u = await playMullerLyer(browser, urlFor(app.dir, 'ko'), app.id, 'noadjust');
+  add('무조정봇: 순응 게이트 발동·그래도 값은 산출(오차 크기로는 안 걸림)',
+    u.reached && u.errors.length === 0 && u.unadjusted === true && u.mag != null,
+    `도달=${u.reached}·에러${u.errors.length}·게이트=${u.unadjusted}·착시=${u.mag}`);
+
+  const r = await playMullerLyer(browser, urlFor(app.dir, 'ko'), app.id, 'random');
+  add('랜덤봇: 두 조건 유효·게이트 안 걸림·흰 화면 없음',
+    r.reached && r.errors.length === 0 && r.nLong > 0 && r.nShort > 0 && r.unadjusted === false && r.spark,
+    `도달=${r.reached}·에러${r.errors.length}·n=${r.nLong}/${r.nShort}·게이트=${r.unadjusted}·spark=${r.spark}`);
+
+  return { id: app.id, checks };
+}
+
 // ── 도형 회전(Mental Rotation) 점검 ────────────────────────────────────
 // 봇은 자극 글자의 transform 행렬식 부호로 거울상 여부를 '본다'(정답 노출 아님, 변환에서 읽음).
 //   correct    : 판별해 정확히 누름. 각도 무관 일정 지연 → 기울기≈0 (봇은 안 돌리니 이 과제의 대조군).
@@ -1641,6 +1742,7 @@ const checkOne = (browser, app) =>
           : app.kind === 'nback' ? checkNback(browser, app)
           : app.kind === 'jnd' ? checkJnd(browser, app)
           : app.kind === 'vsearch' ? checkVSearch(browser, app)
+          : app.kind === 'muller-lyer' ? checkMullerLyer(browser, app)
           : app.kind === 'sart' ? checkSART(browser, app)
           : app.kind === 'ablink' ? checkAblink(browser, app)
           : app.kind === 'blindspot' ? checkBlindspot(browser, app)
