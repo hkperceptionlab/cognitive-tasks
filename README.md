@@ -11,8 +11,8 @@ are also standalone perception demos (experiences, not timed tasks): a
 blind-spot demo, a Necker-cube (bistable perception) demo, a negative-
 afterimage demo, and an inattentional-blindness demo. A new **practice**
 series adds guided experiences rather than measurements — a breath-counting
-practice (Levinson 2014) and a body-scan meditation (with optional voice
-guidance).
+practice (Levinson 2014), a body-scan meditation (with optional voice
+guidance), and a loving-kindness & gratitude meditation.
 
 This is a **demonstration** tool, not a training program. It makes no promise of
 improving cognitive ability — the point is simply to let people experience how
@@ -62,3 +62,5 @@ Built by a high school student, with coding help from an AI tool (Claude Code).
 - [Breath counting (practice) — Adults](./breath-counting-adults/)
 - [Body scan (practice) — Youth](./body-scan-youth/)
 - [Body scan (practice) — Adults](./body-scan-adults/)
+- [Loving-kindness & gratitude (practice) — Youth](./loving-kindness-youth/)
+- [Loving-kindness & gratitude (practice) — Adults](./loving-kindness-adults/)

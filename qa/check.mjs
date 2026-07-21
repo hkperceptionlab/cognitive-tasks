@@ -80,6 +80,8 @@ const APPS = [
   { id: 'breath-counting-adults', dir: 'breath-counting-adults', kind: 'breath' },
   { id: 'body-scan-youth',  dir: 'body-scan-youth',  kind: 'body-scan' },
   { id: 'body-scan-adults', dir: 'body-scan-adults', kind: 'body-scan' },
+  { id: 'loving-kindness-youth',  dir: 'loving-kindness-youth',  kind: 'lotus' },
+  { id: 'loving-kindness-adults', dir: 'loving-kindness-adults', kind: 'lotus' },
 ];
 
 // 범위 지정: `node check.mjs`(전체) / `node check.mjs digitspan`(접두사 일치) / `node check.mjs stroop gonogo`.
@@ -2214,6 +2216,111 @@ async function checkBodyScan(browser, app) {
   return { id: app.id, checks };
 }
 
+// ── 자애·감사(loving-kindness) 점검 — 판정·자기보고 지표 없는 실천(체험) 과제. 그룹D 데모식 스모크 ──
+// 바디스캔과 같은 자동진행 구조 + '4단계 건너뛰기 버튼' 하나가 추가된 형태. 꽃잎이 순서대로 누적 개화하고
+// 중심부가 발광하며 완료까지 가는지, 4단계에서 건너뛰기 버튼이 노출·동작하는지, TTS 미지원/voice 없음
+// 환경에서도 폴백해 진행되는지, 어떤 자기보고 UI(입력창 등)도 없는지를 본다. ?qa=1 이면 전체 세션이
+// ~1초에 끝난다(구조·UI 는 실제와 동일).
+async function checkLotus(browser, app) {
+  const checks = [];
+  const add = (n, p, d) => checks.push({ name: n, pass: p, detail: d });
+  const page = await browser.newPage();
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+  page.on('console', (m) => { if (m.type() === 'error') errors.push('console.error: ' + m.text()); });
+  await page.goto(urlFor(app.dir, 'ko'), { waitUntil: 'load' });
+  await sleep(150);
+  // 음성 목록 로드까지 대기(비동기) — '음성 존재 + headless onend 미발화' = TTS_CAP 안전장치가 없으면
+  // 멈추는 실제 위험 경로를 결정론적으로 테스트한다. 음성이 아예 없는 환경도 setTimeout 으로 계속 진행.
+  await page.evaluate(() => new Promise((r) => {
+    try {
+      if ((speechSynthesis.getVoices() || []).length) return r();
+      speechSynthesis.addEventListener('voiceschanged', () => r(), { once: true });
+      setTimeout(r, 1500);
+    } catch { r(); }
+  }));
+
+  // 1) 인트로 로드 + 안내문 + 시작 버튼 + 언어 4
+  const intro = await page.evaluate(() => ({
+    instr: ((document.querySelector('.lk-instruction') || {}).textContent || '').length,
+    start: !!document.querySelector('[data-act="toLength"]'),
+    langs: document.querySelectorAll('.langbtn').length,
+  }));
+  add('인트로 로드·안내문·시작 버튼', intro.instr > 20 && intro.start, JSON.stringify(intro));
+  add('언어 버튼 4개', intro.langs === 4, `langbtn=${intro.langs}`);
+
+  // 2) 시작 → 길이 선택(3) → 첫 길이 → 세션 화면(연꽃 4꽃잎·안내·진행바·음소거·언어바숨김)
+  await page.click('[data-act="toLength"]').catch(() => {});
+  await sleep(80);
+  const lens = await page.evaluate(() => document.querySelectorAll('.lk-len').length);
+  add('세션 길이 선택 3개', lens === 3, `lk-len=${lens}`);
+  await page.click('.lk-len').catch(() => {});
+  await sleep(80);
+  const sess = await page.evaluate(() => ({
+    lotus: !!document.querySelector('.lk-lotus'),
+    petals: document.querySelectorAll('.lk-petal').length,
+    core: !!document.querySelector('.lk-core'),
+    guide: !!document.querySelector('.lk-guide'),
+    progress: !!document.querySelector('.lk-progress-fill'),
+    mute: !!document.querySelector('[data-act="mute"]'),
+    langbtns: document.querySelectorAll('.langbtn').length,
+    inputs: document.querySelectorAll('input,textarea,select,[contenteditable]').length,
+  }));
+  add('세션: 연꽃(4꽃잎)·중심·안내·진행바·음소거·언어바숨김',
+    sess.lotus && sess.petals === 4 && sess.core && sess.guide && sess.progress && sess.mute
+    && sess.langbtns === 0, JSON.stringify(sess));
+
+  // 3) 음소거 토글 동작(aria-pressed·아이콘 전환 — cancel 은 headless 서 무해, 진행은 계속)
+  await page.click('[data-act="mute"]').catch(() => {});
+  const mute = await page.evaluate(() => {
+    const m = document.querySelector('[data-act="mute"]');
+    return { pressed: m ? m.getAttribute('aria-pressed') : null, icon: m ? m.textContent : '' };
+  });
+  add('음소거 토글 동작(aria-pressed·아이콘 전환)', mute.pressed === 'true' && mute.icon === '🔇', JSON.stringify(mute));
+
+  // 4) 자동 진행: 꽃잎 누적 개화(최대 4)·중심부 발광·안내문 변화, 4단계서 건너뛰기 버튼 노출→클릭.
+  //    입력 UI 는 전 구간(감사 단계 포함) 계속 감시한다(마음속으로만 하는 과제 = 어떤 입력창도 없어야 함).
+  const t0 = Date.now();
+  const guides = new Set();
+  let maxOn = 0, sawCore = false, sawSkip = false, skipClicked = false, doneReached = false, sawInput = false;
+  while (Date.now() - t0 < 8000) {
+    const st = await page.evaluate(() => {
+      const on = document.querySelectorAll('.lk-petal.on').length;
+      const core = !!document.querySelector('.lk-core.on');
+      const g = (document.querySelector('.lk-guide') || {}).textContent || '';
+      const sk = document.querySelector('.lk-skip');
+      return { on, core, guide: g, skipVisible: !!sk && !sk.hidden,
+        inputs: document.querySelectorAll('input,textarea,select,[contenteditable]').length,
+        done: !!document.querySelector('.lk-facts') };
+    });
+    if (st.guide) guides.add(st.guide);
+    if (st.on > maxOn) maxOn = st.on;
+    if (st.core) sawCore = true;
+    if (st.inputs > 0) sawInput = true;
+    if (st.skipVisible) { sawSkip = true; if (!skipClicked) { await page.click('.lk-skip').catch(() => {}); skipClicked = true; } }
+    if (st.done) { doneReached = true; break; }
+    await sleep(25);
+  }
+  add('꽃잎 순차 개화(최대 4장)·중심부 발광·안내문 변화(음성 로드됨→TTS_CAP 상한으로 진행)',
+    maxOn === 4 && sawCore && guides.size >= 5, `최대꽃잎 ${maxOn}·중심 ${sawCore}·안내문 ${guides.size}종`);
+  add('4단계 건너뛰기 버튼 노출·클릭 동작', sawSkip && skipClicked, `노출 ${sawSkip}·클릭 ${skipClicked}`);
+  add('자기보고 UI 부재(입력창·textarea·select·contenteditable, 전 구간)',
+    !sawInput, sawInput ? '입력 UI 발견' : '없음');
+
+  // 5) 자동 종료 → 완료 화면(총 시간·거쳐온 단계 5)
+  const done = await page.evaluate(() => {
+    const facts = document.querySelector('.lk-facts');
+    return { reached: !!facts, restart: !!document.querySelector('[data-act="restart"]'),
+      vals: facts ? [...facts.querySelectorAll('.row b')].map((b) => b.textContent.trim()) : [] };
+  });
+  add('자동 종료→완료 화면(거쳐온 단계 5)',
+    doneReached && done.reached && done.restart && done.vals.length === 2 && done.vals[1] === '5', JSON.stringify(done.vals));
+  add('JS 에러 없음', errors.length === 0, errors.length ? errors.slice(0, 3).join(' / ') : 'none');
+  await page.close();
+  return { id: app.id, checks };
+}
+
 // ── 실행 ─────────────────────────────────────────────────────────────
 if (SELECTED.length === 0) {
   console.error(`일치하는 앱이 없습니다: "${ARGS.join(' ')}". 예: digitspan / stroop gonogo / corsi-youth`);
@@ -2244,6 +2351,7 @@ const checkOne = (browser, app) =>
           : app.kind === 'emo-dotprobe' ? checkEmoDotprobe(browser, app)
           : app.kind === 'breath' ? checkBreath(browser, app)
           : app.kind === 'body-scan' ? checkBodyScan(browser, app)
+          : app.kind === 'lotus' ? checkLotus(browser, app)
             : checkApp(browser, app);
 
 const server = await startServer();

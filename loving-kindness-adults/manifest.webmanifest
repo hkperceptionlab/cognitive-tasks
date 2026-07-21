@@ -1,0 +1,20 @@
+{
+  "name": "자애·감사 명상 (성인)",
+  "short_name": "자애·감사",
+  "description": "나 자신에서 시작해 다른 사람에게로 따뜻한 마음을 넓혀 보내고, 오늘의 고마움을 떠올리는 자애·감사 명상. 검사가 아니라 체험이며, 아무 기록도 기기를 떠나지 않습니다.",
+  "lang": "ko",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fafafa",
+  "theme_color": "#4A6B4D",
+  "icons": [
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
