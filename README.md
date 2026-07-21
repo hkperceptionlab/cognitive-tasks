@@ -64,3 +64,28 @@ Built by a high school student, with coding help from an AI tool (Claude Code).
 - [Body scan (practice) — Adults](./body-scan-adults/)
 - [Loving-kindness & gratitude (practice) — Youth](./loving-kindness-youth/)
 - [Loving-kindness & gratitude (practice) — Adults](./loving-kindness-adults/)
+
+## Originality & sources
+
+All code, on-screen text, illustrations (SVG), and synthesized sounds in this
+repository were written from scratch. The tasks re-implement well-known
+experimental **paradigms** from the published psychology literature (Stroop,
+Go/No-go, Corsi, Simon, stop-signal, N-back, mental rotation, SART, attentional
+blink, Müller-Lyer, Ebbinghaus, and others) — paradigms are methods, not
+copyrightable expression, and none of the specific items, norms, or branding of
+any commercial/clinical test battery are copied or implied. The meditation
+practices (breath counting, body scan, loving-kindness, gratitude) are
+long-standing public-domain techniques; their guidance text here is original
+wording, not taken from any book, app, or script.
+
+No third-party libraries are bundled. Fonts are referenced by name from the
+system font stack (no font files shipped); voice guidance uses the browser's
+built-in `speechSynthesis`; sounds are generated with the Web Audio API rather
+than sampled audio. Emoji are rendered by the operating system.
+
+This is a demonstration tool, not a validated clinical instrument.
+
+## License
+
+Released under the [MIT License](./LICENSE) — you are free to use, modify, and
+redistribute it, provided the copyright notice is retained.
