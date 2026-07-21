@@ -9,8 +9,9 @@
 //   넘어간다 → 세션 중 사용자 조작은 음소거 토글뿐. 완료 화면도 점수·자기보고 지표 없이 총 시간·부위 수만.
 //
 // ★ 시각 예외(DESIGN.md 문서화 — 호흡세기와 다른 근거): 호흡세기 싱잉볼은 '장식이지만 호흡 표시 기능'
-//   이었고, 바디스캔 실루엣은 '몸의 위치를 보여주는 것이 안내 자체의 기능'이라 필요하다. 정면 단순 선화,
-//   얼굴 표정 없음, 성별·나이·체형 디테일 배제(캐릭터 아니라 '부위 표시 다이어그램'). SVG 직접 렌더.
+//   이었고, 바디스캔 실루엣은 '몸의 위치를 보여주는 것이 안내 자체의 기능'이라 필요하다. 옆으로 누운 측면
+//   단순 선화(안내 문구 '편안히 누워도 좋다'와 자세 일치), 얼굴 표정 없음, 성별·나이·체형 디테일 배제
+//   (캐릭터 아니라 '부위 표시 다이어그램'). SVG 직접 렌더.
 //
 // ★ 안내 전달: Web Speech API(speechSynthesis)로 각 부위 문구를 읽어주고 동시에 화면 텍스트로도 항상 표시.
 //   다음 부위로 넘어가는 시점 = TTS onend 와 부위별 최소 시간 중 '더 늦은 쪽'. TTS 실패·미지원·해당 언어
@@ -51,19 +52,19 @@ const PARTS = [
 // 실루엣 부위 그룹(회색 조립). 강조 시 그 그룹만 accent. 그리는 순서(뒤→앞): 팔→어깨→몸통→다리→…→머리.
 const REGION_ORDER = ['arms', 'shoulders', 'chest', 'belly', 'pelvis', 'thighs', 'knees', 'calves', 'feet', 'hands', 'neck', 'face', 'crown'];
 const REGIONS = {
-  arms:      '<rect x="42" y="150" width="16" height="150" rx="8"/><rect x="142" y="150" width="16" height="150" rx="8"/>',
-  shoulders: '<rect x="58" y="134" width="84" height="22" rx="11"/>',
-  chest:     '<rect x="70" y="154" width="60" height="60" rx="10"/>',
-  belly:     '<rect x="72" y="214" width="56" height="52" rx="10"/>',
-  pelvis:    '<rect x="70" y="266" width="60" height="44" rx="12"/>',
-  thighs:    '<rect x="74" y="310" width="20" height="60" rx="9"/><rect x="106" y="310" width="20" height="60" rx="9"/>',
-  knees:     '<circle cx="84" cy="376" r="11"/><circle cx="116" cy="376" r="11"/>',
-  calves:    '<rect x="76" y="386" width="16" height="58" rx="8"/><rect x="108" y="386" width="16" height="58" rx="8"/>',
-  feet:      '<ellipse cx="82" cy="452" rx="16" ry="10"/><ellipse cx="118" cy="452" rx="16" ry="10"/>',
-  hands:     '<ellipse cx="50" cy="312" rx="12" ry="15"/><ellipse cx="150" cy="312" rx="12" ry="15"/>',
-  neck:      '<rect x="90" y="120" width="20" height="18" rx="4"/>',
-  face:      '<ellipse cx="100" cy="92" rx="30" ry="34"/>',
-  crown:     '<ellipse cx="100" cy="60" rx="24" ry="16"/>',
+  arms:      '<rect x="146" y="130" width="128" height="15" rx="8"/>',
+  shoulders: '<rect x="118" y="70" width="30" height="60" rx="15"/>',
+  chest:     '<rect x="140" y="74" width="62" height="54" rx="12"/>',
+  belly:     '<rect x="200" y="78" width="58" height="48" rx="12"/>',
+  pelvis:    '<rect x="256" y="76" width="58" height="54" rx="13"/>',
+  thighs:    '<rect x="310" y="80" width="66" height="20" rx="9"/><rect x="310" y="104" width="66" height="20" rx="9"/>',
+  knees:     '<circle cx="382" cy="90" r="11"/><circle cx="382" cy="114" r="11"/>',
+  calves:    '<rect x="392" y="82" width="52" height="17" rx="8"/><rect x="392" y="105" width="52" height="17" rx="8"/>',
+  feet:      '<ellipse cx="450" cy="90" rx="15" ry="9"/><ellipse cx="450" cy="114" rx="15" ry="9"/>',
+  hands:     '<ellipse cx="284" cy="137" rx="13" ry="11"/>',
+  neck:      '<rect x="96" y="88" width="26" height="26" rx="6"/>',
+  face:      '<ellipse cx="68" cy="100" rx="32" ry="30"/>',
+  crown:     '<ellipse cx="40" cy="100" rx="14" ry="22"/>',
 };
 
 // ── 앱별 옵션 + 세션 상태 ─────────────────────────────────
@@ -179,12 +180,12 @@ function stopSession() {
 }
 function finishSession() { stopSession(); stage = 'done'; render(); }
 
-// ── 실루엣 SVG(정면 단순 선화, 표정·성별·체형 디테일 없음) ──────────
+// ── 실루엣 SVG(옆으로 누운 측면 단순 선화, 표정·성별·체형 디테일 없음) ──────────
 function silhouetteSVG() {
   const groups = REGION_ORDER
     .map((id) => `<g class="bsil-region" data-part="${id}">${REGIONS[id]}</g>`)
     .join('');
-  return `<svg viewBox="0 0 200 470" class="bsil" role="img" aria-label="${t('silAlt')}">${groups}</svg>`;
+  return `<svg viewBox="0 0 470 200" class="bsil" role="img" aria-label="${t('silAlt')}">${groups}</svg>`;
 }
 
 function injectStyles() {
@@ -225,7 +226,7 @@ html,body{margin:0}
   cursor:pointer;touch-action:manipulation}
 .bs-len:active{background:var(--bs-accent);color:#fff}
 /* 세션: 실루엣 + 안내 텍스트 + 진행바 */
-.bs-silwrap{margin:.2rem auto .6rem;width:min(46vw,calc(190px * var(--bs-scale)))}
+.bs-silwrap{margin:.2rem auto .6rem;width:min(88vw,calc(430px * var(--bs-scale)))}
 .bsil{width:100%;height:auto;display:block}
 .bsil-region{fill:#e6e9e6;stroke:#c2c8c2;stroke-width:1.5;transition:fill .6s ease,stroke .6s ease}
 .bsil-region.on{fill:var(--bs-accent);fill-opacity:.5;stroke:var(--bs-accent)}
