@@ -82,6 +82,8 @@ const APPS = [
   { id: 'body-scan-adults', dir: 'body-scan-adults', kind: 'body-scan' },
   { id: 'loving-kindness-youth',  dir: 'loving-kindness-youth',  kind: 'lotus' },
   { id: 'loving-kindness-adults', dir: 'loving-kindness-adults', kind: 'lotus' },
+  { id: 'guided-timer-youth',  dir: 'guided-timer-youth',  kind: 'guided-timer' },
+  { id: 'guided-timer-adults', dir: 'guided-timer-adults', kind: 'guided-timer' },
 ];
 
 // 범위 지정: `node check.mjs`(전체) / `node check.mjs digitspan`(접두사 일치) / `node check.mjs stroop gonogo`.
@@ -2321,6 +2323,112 @@ async function checkLotus(browser, app) {
   return { id: app.id, checks };
 }
 
+// ── 가이드 명상 타이머(guided-timer) 점검 — 판정·자기보고 지표 없는 실천(체험) 과제. 그룹D 데모식 스모크 ──
+// 단계 없이 경과 비율로 그림이 연속 변함 + 성인/청소년 그림 내용이 다름(data-scene 로 분기). 성인=일출
+// (해 cy 감소·하늘색 변화), 청소년=별 누적 점등(최종 9개). 리마인더 텍스트가 떴다 사라지는지, 완료 화면이
+// '함께한 시간'만인지, 어떤 입력 UI 도 없는지를 본다. ?qa=1 이면 세션 3초·리마인더 0.7초로 축약.
+async function checkGuidedTimer(browser, app) {
+  const checks = [];
+  const add = (n, p, d) => checks.push({ name: n, pass: p, detail: d });
+  const page = await browser.newPage();
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+  page.on('console', (m) => { if (m.type() === 'error') errors.push('console.error: ' + m.text()); });
+  await page.goto(urlFor(app.dir, 'ko'), { waitUntil: 'load' });
+  await sleep(150);
+  // 리마인더가 음성 없이도(headless voice 없음) 텍스트로 뜨는지 보는 것이라 voiceschanged 대기는 불필요.
+
+  // 1) 인트로 로드 + 안내문 + 시작 버튼 + 언어 4
+  const intro = await page.evaluate(() => ({
+    instr: ((document.querySelector('.gt-instruction') || {}).textContent || '').length,
+    start: !!document.querySelector('[data-act="toLength"]'),
+    langs: document.querySelectorAll('.langbtn').length,
+  }));
+  add('인트로 로드·안내문·시작 버튼', intro.instr > 20 && intro.start, JSON.stringify(intro));
+  add('언어 버튼 4개', intro.langs === 4, `langbtn=${intro.langs}`);
+
+  // 2) 시작 → 길이 3 → 첫 길이 → 세션(그림·리마인더·음소거·언어바숨김·숫자게이지 없음)
+  await page.click('[data-act="toLength"]').catch(() => {});
+  await sleep(80);
+  const lens = await page.evaluate(() => document.querySelectorAll('.gt-len').length);
+  add('세션 길이 선택 3개', lens === 3, `gt-len=${lens}`);
+  await page.click('.gt-len').catch(() => {});
+  await sleep(80);
+  const sess = await page.evaluate(() => {
+    const svg = document.querySelector('.gt-sky');
+    return {
+      sky: !!svg, scene: svg ? svg.dataset.scene : null,
+      reminder: !!document.querySelector('.gt-reminder'),
+      mute: !!document.querySelector('[data-act="mute"]'),
+      langbtns: document.querySelectorAll('.langbtn').length,
+    };
+  });
+  add('세션: 그림(그림 씬)·리마인더칸·음소거·언어바숨김',
+    sess.sky && (sess.scene === 'sunrise' || sess.scene === 'stars') && sess.reminder
+    && sess.mute && sess.langbtns === 0, JSON.stringify(sess));
+
+  // 3) 음소거 토글 동작
+  await page.click('[data-act="mute"]').catch(() => {});
+  const mute = await page.evaluate(() => {
+    const m = document.querySelector('[data-act="mute"]');
+    return { pressed: m ? m.getAttribute('aria-pressed') : null, icon: m ? m.textContent : '' };
+  });
+  add('음소거 토글 동작(aria-pressed·아이콘 전환)', mute.pressed === 'true' && mute.icon === '🔇', JSON.stringify(mute));
+
+  // 4) 진행: (일출) 해 cy 감소·하늘색 변화 / (별) 점등 누적 최대 9. 리마인더 떴다 사라짐. 입력 UI 전 구간 부재.
+  const t0 = Date.now();
+  let initSunCy = null, minSunCy = null, initTop = null, sawSkyChange = false;   // sunrise
+  let maxStars = 0;                                                              // stars
+  let sawReminder = false, reminderHid = false, sawInput = false, doneReached = false;
+  while (Date.now() - t0 < 8000) {
+    const st = await page.evaluate(() => {
+      const sun = document.querySelector('.gt-sun');
+      const top = document.querySelector('.s-top');
+      const rem = document.querySelector('.gt-reminder');
+      return {
+        sunCy: sun ? parseFloat(sun.getAttribute('cy')) : null,
+        topColor: top ? top.getAttribute('stop-color') : null,
+        starsOn: document.querySelectorAll('.gt-star.on').length,
+        remShown: !!rem && rem.classList.contains('show') && (rem.textContent || '').length > 0,
+        inputs: document.querySelectorAll('input,textarea,select,[contenteditable]').length,
+        done: !!document.querySelector('.gt-facts'),
+      };
+    });
+    if (st.sunCy != null) { if (initSunCy == null) initSunCy = st.sunCy; if (minSunCy == null || st.sunCy < minSunCy) minSunCy = st.sunCy; }
+    if (st.topColor != null) { if (initTop == null) initTop = st.topColor; else if (st.topColor !== initTop) sawSkyChange = true; }
+    if (st.starsOn > maxStars) maxStars = st.starsOn;
+    if (st.remShown) sawReminder = true; else if (sawReminder) reminderHid = true;
+    if (st.inputs > 0) sawInput = true;
+    if (st.done) { doneReached = true; break; }
+    await sleep(25);
+  }
+  if (sess.scene === 'sunrise') {
+    add('일출: 해가 떠오름(cy 감소)·하늘색 변화',
+      initSunCy != null && minSunCy != null && (initSunCy - minSunCy) > 40 && sawSkyChange,
+      `cy ${initSunCy}→${minSunCy}·하늘변화 ${sawSkyChange}`);
+  } else {
+    add('별: 시간 경과에 따라 누적 점등(최종 9개)', maxStars === 9, `최대점등 ${maxStars}`);
+  }
+  add('리마인더 텍스트 떴다 사라짐', sawReminder && reminderHid, `표시 ${sawReminder}·사라짐 ${reminderHid}`);
+  add('자기보고 UI 부재(입력창·textarea·select·contenteditable, 전 구간)', !sawInput, sawInput ? '입력 UI 발견' : '없음');
+
+  // 5) 자동 종료 → 완료 화면(함께한 시간만·그림 없음)
+  const done = await page.evaluate(() => {
+    const facts = document.querySelector('.gt-facts');
+    return {
+      reached: !!facts, restart: !!document.querySelector('[data-act="restart"]'),
+      rows: facts ? facts.querySelectorAll('.row').length : 0,
+      noScene: !document.querySelector('.gt-sky'),
+    };
+  });
+  add('자동 종료→완료 화면(함께한 시간만·그림 없음)',
+    doneReached && done.reached && done.restart && done.rows === 1 && done.noScene, JSON.stringify(done));
+  add('JS 에러 없음', errors.length === 0, errors.length ? errors.slice(0, 3).join(' / ') : 'none');
+  await page.close();
+  return { id: app.id, checks };
+}
+
 // ── 실행 ─────────────────────────────────────────────────────────────
 if (SELECTED.length === 0) {
   console.error(`일치하는 앱이 없습니다: "${ARGS.join(' ')}". 예: digitspan / stroop gonogo / corsi-youth`);
@@ -2352,6 +2460,7 @@ const checkOne = (browser, app) =>
           : app.kind === 'breath' ? checkBreath(browser, app)
           : app.kind === 'body-scan' ? checkBodyScan(browser, app)
           : app.kind === 'lotus' ? checkLotus(browser, app)
+          : app.kind === 'guided-timer' ? checkGuidedTimer(browser, app)
             : checkApp(browser, app);
 
 const server = await startServer();

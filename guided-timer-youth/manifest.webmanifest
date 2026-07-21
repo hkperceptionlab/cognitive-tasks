@@ -1,0 +1,20 @@
+{
+  "name": "고요한 시간 (청소년)",
+  "short_name": "고요한 시간",
+  "description": "특별한 방법 없이 정해진 시간 동안 안내와 함께 조용히 앉아 있는 가이드 명상 타이머. 시간이 흐르며 밤하늘에 별이 하나씩 켜집니다. 검사가 아니라 체험이며, 아무 기록도 기기를 떠나지 않습니다.",
+  "lang": "ko",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fafafa",
+  "theme_color": "#56805A",
+  "icons": [
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

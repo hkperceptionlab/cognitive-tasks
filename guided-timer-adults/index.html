@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>고요한 시간 (성인)</title>
+  <meta name="theme-color" content="#4A6B4D" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icons/icon.svg" />
+  <link rel="apple-touch-icon" href="./icons/icon.svg" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+</head>
+<body>
+  <div id="app"></div>
+
+  <script type="module">
+    import { startGuidedTimer } from '../guided-timer-common/guided-timer.js';
+
+    // 성인: 세이지그린 어두운 톤(#4A6B4D, 6.0:1 AA), 표준 크기·표준 문구, 일출 그림(차분한 톤).
+    startGuidedTimer({
+      id: 'guided-timer-adults',
+      accent: '#4A6B4D',
+      scale: 1,
+      tone: 'std',
+      scene: 'sunrise',
+    });
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    }
+  </script>
+</body>
+</html>

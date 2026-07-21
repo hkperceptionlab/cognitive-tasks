@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>고요한 시간 (청소년)</title>
+  <meta name="theme-color" content="#56805A" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icons/icon.svg" />
+  <link rel="apple-touch-icon" href="./icons/icon.svg" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+</head>
+<body>
+  <div id="app"></div>
+
+  <script type="module">
+    import { startGuidedTimer } from '../guided-timer-common/guided-timer.js';
+
+    // 청소년: 세이지그린 밝은 톤(#56805A, 4.6:1 AA), 더 큰 크기, 쉬운 말, 밤하늘 별 그림(생동감 있는 톤).
+    startGuidedTimer({
+      id: 'guided-timer-youth',
+      accent: '#56805A',
+      scale: 1.15,
+      tone: 'easy',
+      scene: 'stars',
+    });
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    }
+  </script>
+</body>
+</html>
